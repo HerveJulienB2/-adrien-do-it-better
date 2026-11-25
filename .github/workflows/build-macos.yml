@@ -1,0 +1,42 @@
+name: Build VST3 macOS
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (universal arm64 + x86_64)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+      - name: Build
+        run: cmake --build build --config Release -j 4
+
+      - name: Sign (ad-hoc) & package
+        run: |
+          VST="$(find build -name 'ADRIEN DO IT BETTER.vst3' -type d -path '*Release*' | head -1)"
+          echo "Bundle: $VST"
+          codesign --force --deep --sign - "$VST"
+          lipo -info "$VST/Contents/MacOS/ADRIEN DO IT BETTER"
+          mkdir -p dist
+          ditto -c -k --keepParent "$VST" "dist/ADRIEN_DO_IT_BETTER_VST3_macOS.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ADRIEN_DO_IT_BETTER_VST3_macOS
+          path: dist/ADRIEN_DO_IT_BETTER_VST3_macOS.zip
+
+      - name: Release (tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/ADRIEN_DO_IT_BETTER_VST3_macOS.zip --title "ADRIEN DO IT BETTER ${{ github.ref_name }}" --notes "VST3 macOS universel (Apple Silicon + Intel)."
