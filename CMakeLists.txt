@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(ADRIEN_DO_IT_BETTER VERSION 1.0.0)
+project(ADRIEN_DO_IT_BETTER_V2 VERSION 2.0.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,39 +25,45 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
-# Formats : VST3 par défaut (ajoute AU ou Standalone avec -DADRIEN_PLUGIN_FORMATS="VST3;AU")
+# Formats : VST3 par défaut. Pro Tools : -DADRIEN_PLUGIN_FORMATS="VST3;AAX" (le SDK AAX est
+# fourni avec JUCE 8). Pour s'ouvrir dans Pro Tools, l'AAX doit ensuite être signé avec PACE.
 if(NOT ADRIEN_PLUGIN_FORMATS)
     set(ADRIEN_PLUGIN_FORMATS VST3)
 endif()
 
+# copie dans le dossier des plugins après la compilation (désactivée en CI : -DADRIEN_COPY_AFTER_BUILD=OFF)
+if(NOT DEFINED ADRIEN_COPY_AFTER_BUILD)
+    set(ADRIEN_COPY_AFTER_BUILD TRUE)
+endif()
+
+# V2 : un nouveau plugin (nouveaux codes), signé Méchant Humain.
 juce_add_plugin(AdrienDoItBetter
-    COMPANY_NAME "Julien Herve"
-    COMPANY_CODE "JHrv"
-    PLUGIN_MANUFACTURER_CODE "JHrv"
-    PLUGIN_CODE "AdDB"
-    PRODUCT_NAME "ADRIEN DO IT BETTER"
-    BUNDLE_ID "com.julienherve.adriendoitbetter"
+    COMPANY_NAME "Méchant Humain"
+    COMPANY_CODE "MHmn"
+    PLUGIN_MANUFACTURER_CODE "MHmn"
+    PLUGIN_CODE "AdB2"
+    PRODUCT_NAME "ADRIEN DO IT BETTER V2"
+    BUNDLE_ID "com.mechanthumain.adriendoitbetter2"
+    AAX_CATEGORY EQ Harmonic
     FORMATS ${ADRIEN_PLUGIN_FORMATS}
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-    COPY_PLUGIN_AFTER_BUILD TRUE
+    COPY_PLUGIN_AFTER_BUILD ${ADRIEN_COPY_AFTER_BUILD}
     VST3_CATEGORIES Fx EQ Distortion)
 
 juce_generate_juce_header(AdrienDoItBetter)
 
 juce_add_binary_data(AdrienAssets SOURCES
     Assets/adrien_body.png
-    Assets/adrien_arm.png
-    Assets/adrien_bald.png)
+    Assets/adrien_arm.png)
 
 target_sources(AdrienDoItBetter PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
-    Source/AdrienView.cpp
-    Source/EqScreen.cpp)
+    Source/AdrienView.cpp)
 
 target_compile_definitions(AdrienDoItBetter PUBLIC
     JUCE_WEB_BROWSER=0
@@ -74,3 +80,24 @@ target_link_libraries(AdrienDoItBetter
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+# Tests (Linux/macOS, sans DAW) : -DADRIEN_BUILD_TESTS=ON
+if(ADRIEN_BUILD_TESTS)
+    juce_add_console_app(AdrienTests PRODUCT_NAME "AdrienTests")
+    target_sources(AdrienTests PRIVATE
+        Tests/Tests.cpp
+        Source/PluginProcessor.cpp
+        Source/PluginEditor.cpp
+        Source/AdrienView.cpp)
+    target_include_directories(AdrienTests PRIVATE Source)
+    target_compile_definitions(AdrienTests PRIVATE
+        JucePlugin_Name="ADRIEN DO IT BETTER V2"
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(AdrienTests PRIVATE
+        AdrienAssets
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+    juce_generate_juce_header(AdrienTests)
+endif()

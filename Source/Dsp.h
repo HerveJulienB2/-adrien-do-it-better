@@ -90,10 +90,9 @@ struct Biquad
 };
 
 //==============================================================================
-//  Le "Pultec trick" : boost en shelf + atténuation en cloche décalée.
-//  Les deux réglés sur LA MÊME fréquence => bosse résonante + creux juste à côté.
-//  Mode LOW : boost sous la fréquence, creux au-dessus (le classique sur kick/basse).
-//  Mode HIGH : miroir (boost au-dessus, creux en dessous) pour l'air / la brillance.
+//  Le "Pultec trick" : boost en shelf + atténuation en cloche décalée d'une octave.
+//  Les deux réglés sur LA MÊME fréquence => bosse sous la fréquence, creux au-dessus.
+//  V2 : seulement le grave (30 à 450 Hz), le mode HIGH a été retiré.
 //==============================================================================
 struct PultecDesign
 {
@@ -101,9 +100,9 @@ struct PultecDesign
     static constexpr double attenMaxDb = 10.0;   // potard 10 => -10 dB
     static constexpr double boostQ = 0.8;
     static constexpr double attenQ = 0.7;
-    static constexpr double attenRatio = 2.0;    // décalage du creux (x2 ou /2)
+    static constexpr double attenRatio = 2.0;    // le creux est une octave au-dessus
 
-    static void design (double fs, double freq, double boost0to10, double atten0to10, bool highMode,
+    static void design (double fs, double freq, double boost0to10, double atten0to10,
                         BiquadCoeffs& boostK, BiquadCoeffs& attenK)
     {
         const double nyq = fs * 0.5;
@@ -111,16 +110,8 @@ struct PultecDesign
         const double gB = boostMaxDb * std::clamp (boost0to10, 0.0, 10.0) / 10.0;
         const double gA = -attenMaxDb * std::clamp (atten0to10, 0.0, 10.0) / 10.0;
 
-        if (! highMode)
-        {
-            boostK = BiquadCoeffs::lowShelf (fs, f, boostQ, gB);
-            attenK = BiquadCoeffs::bell (fs, std::min (f * attenRatio, nyq * 0.9), attenQ, gA);
-        }
-        else
-        {
-            boostK = BiquadCoeffs::highShelf (fs, f, boostQ, gB);
-            attenK = BiquadCoeffs::bell (fs, f / attenRatio, attenQ, gA);
-        }
+        boostK = BiquadCoeffs::lowShelf (fs, f, boostQ, gB);
+        attenK = BiquadCoeffs::bell (fs, std::min (f * attenRatio, nyq * 0.9), attenQ, gA);
     }
 };
 
@@ -234,17 +225,5 @@ struct Saturator
         return out;
     }
 };
-
-//==============================================================================
-//  Réponse de la chaîne EQ (pour l'écran) : (1-mix) + mix * Hboost * Hatten
-//==============================================================================
-inline double eqResponseDb (double fs, double freq, double boost, double atten, bool highMode, double mix, double f)
-{
-    BiquadCoeffs b, a;
-    PultecDesign::design (fs, freq, boost, atten, highMode, b, a);
-    const auto h = b.response (fs, f) * a.response (fs, f);
-    const auto total = (1.0 - mix) + mix * h;
-    return 20.0 * std::log10 (std::max (1.0e-6, std::abs (total)));
-}
 
 } // namespace adrien
