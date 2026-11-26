@@ -2,11 +2,17 @@ name: Build macOS (VST3 + AAX)
 
 # Compile à chaque envoi, sur toutes les branches : le zip est dans l'onglet Actions (artefact).
 # Une release n'est publiée que pour un tag de version (v2.0, v2.1...) : la release v1.0 n'est plus touchée.
+# On peut aussi publier depuis l'onglet Actions (Run workflow) en donnant le nom de la version.
 on:
   push:
     branches: [ '**' ]
     tags: [ 'v*' ]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Version à publier (ex. v2.0). Vide = simple compilation."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -47,16 +53,18 @@ jobs:
           name: ADRIEN_DO_IT_BETTER_V2_macOS
           path: dist/ADRIEN_DO_IT_BETTER_V2_macOS.zip
 
-      - name: Publish release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish release (tags, or manual run with a version)
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
         env:
           GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.release_tag }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${INPUT_TAG:-$GITHUB_REF_NAME}"
+          case "$TAG" in v1.0) echo "La v1.0 ne doit pas être touchée"; exit 1;; esac
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/ADRIEN_DO_IT_BETTER_V2_macOS.zip --clobber
           else
-            gh release create "$TAG" dist/ADRIEN_DO_IT_BETTER_V2_macOS.zip \
+            gh release create "$TAG" dist/ADRIEN_DO_IT_BETTER_V2_macOS.zip --target "$GITHUB_SHA" \
               --title "ADRIEN DO IT BETTER ${TAG}" \
               --notes "VST3 macOS universel (Apple Silicon + Intel) + AAX non signé. Suis INSTALLATION.txt dans le zip."
           fi
