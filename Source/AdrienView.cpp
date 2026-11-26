@@ -554,15 +554,6 @@ void AdrienView::drawReactions (Graphics& g, const AffineTransform& t)
     const float time = (float) s.time;
     const float pi = MathConstants<float>::pi;
     const auto green = Colour (0xff3fe07d);
-    const float textScale = baseScale / 0.36f;
-
-    auto label = [&] (const String& text, Point<float> assetPt, float size, Colour c, float alpha)
-    {
-        const auto p = assetPt.transformedBy (t);
-        g.setColour (c.withAlpha (alpha));
-        g.setFont (FontOptions (size * textScale, Font::bold));
-        g.drawText (text, Rectangle<float> (200.0f, size * textScale * 1.4f).withCentre (p), Justification::centred);
-    };
 
     // --- son fort : cornes du diable ---
     if (s.loud)
@@ -660,15 +651,9 @@ void AdrienView::drawReactions (Graphics& g, const AffineTransform& t)
             h.addEllipse (Rectangle<float> (38.0f, 56.0f).withCentre (ear));
             fillSkin (g, h, t, a);
         }
-        label ("!!", Asset::headTop.translated (0.0f, -60.0f), 22.0f, AdrienColours::hot, a);
     }
 
-    // --- AUTO GAIN off : haussement d'épaules ---
-    if (const float a = s.reactionAmount (Reaction::AutoGainOff, 2.0f); a > 0.0f)
-    {
-        label ("?", Asset::headTop.translated (-110.0f, 10.0f), 26.0f, Colour (0xff25292b), a);
-        label ("?", Asset::headTop.translated (110.0f, -10.0f), 20.0f, Colour (0xff25292b), a * 0.8f);
-    }
+    // AUTO GAIN off : le haussement d'épaules est dans currentTransform() (plus de « ? » flottants)
 
     // --- double-clic : clin d'œil ---
     if (s.reaction == Reaction::Reset && s.reactionAge < 0.9f)
@@ -695,12 +680,6 @@ void AdrienView::drawReactions (Graphics& g, const AffineTransform& t)
             m.addEllipse (Rectangle<float> (26.0f * yawn + 6.0f, 36.0f * yawn).withCentre (Asset::mouth.translated (0.0f, 4.0f)));
             g.setColour (Colour (0xff2b0e0a));
             g.fillPath (m, t);
-        }
-        for (int k = 0; k < 3; ++k)
-        {
-            const float zp = std::fmod (time * 0.4f + (float) k / 3.0f, 1.0f);
-            label ("z", Asset::headTop.translated (-90.0f - zp * 60.0f, 20.0f - zp * 90.0f), 12.0f + zp * 10.0f,
-                   Colour (0xff25292b), 1.0f - zp);
         }
     }
 
@@ -757,7 +736,9 @@ void AdrienView::drawReactions (Graphics& g, const AffineTransform& t)
     // --- CLIP : panneau rouge qui clignote ---
     if (s.clipping && std::fmod (time * 6.0f, 2.0f) < 1.4f)
     {
-        const auto p = Asset::headTop.translated (0.0f, -95.0f).transformedBy (t);
+        // sur son t-shirt : au-dessus de la tête, la place est pour la bulle
+        const float textScale = baseScale / 0.36f;
+        const auto p = Asset::mouth.translated (0.0f, 170.0f).transformedBy (t);
         const auto r = Rectangle<float> (70.0f * textScale, 26.0f * textScale).withCentre (p);
         g.setColour (Colour (0xffd8261c));
         g.fillRoundedRectangle (r, 5.0f);

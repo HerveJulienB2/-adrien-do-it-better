@@ -8,7 +8,7 @@ static String U8 (const char* s) { return String::fromUTF8 (s); }
 //==============================================================================
 //  KNOB
 //==============================================================================
-Knob::Knob (AudioProcessorValueTreeState& state, const String& paramId, const String& text, bool metal, int ticks)
+Knob::Knob (AudioProcessorValueTreeState& state, const String& paramId, const String& text, Colour cap, int ticks)
 {
     title.setText (text, dontSendNotification);
     title.setJustificationType (Justification::centred);
@@ -20,7 +20,7 @@ Knob::Knob (AudioProcessorValueTreeState& state, const String& paramId, const St
     slider.setTextBoxStyle (Slider::TextBoxBelow, false, 76, 16);
     slider.setRotaryParameters (MathConstants<float>::pi * 1.25f, MathConstants<float>::pi * 2.75f, true);
     slider.setMouseDragSensitivity (ticks == 10 ? 220 : 160);
-    slider.getProperties().set ("metal", metal);
+    slider.getProperties().set ("cap", (int) cap.getARGB());
     slider.getProperties().set ("ticks", ticks);
     addAndMakeVisible (slider);
 
@@ -115,13 +115,13 @@ void FreqStrip::mouseDown (const MouseEvent& e)
 //==============================================================================
 EditorContent::EditorContent (AdrienAudioProcessor& p)
     : proc (p),
-      freq   (p.apvts, ParamIDs::freq,   "FREQUENCY", true, AdrienAudioProcessor::numFreqSteps - 1),
-      boost  (p.apvts, ParamIDs::boost,  "BOOST", true),
-      atten  (p.apvts, ParamIDs::atten,  "ATTEN", true),
-      eqMix  (p.apvts, ParamIDs::eqMix,  "EQ DRY / WET"),
-      drive  (p.apvts, ParamIDs::drive,  "DRIVE", true),
-      satMix (p.apvts, ParamIDs::satMix, "SAT DRY / WET"),
-      output (p.apvts, ParamIDs::output, "OUTPUT"),
+      freq   (p.apvts, ParamIDs::freq,   "FREQUENCY",     Colour (0xffece5d3), AdrienAudioProcessor::numFreqSteps - 1),
+      boost  (p.apvts, ParamIDs::boost,  "BOOST",         Colour (0xfff0c53f)),
+      atten  (p.apvts, ParamIDs::atten,  "ATTEN",         Colour (0xff78b4dc)),
+      eqMix  (p.apvts, ParamIDs::eqMix,  "EQ DRY / WET",  Colour (0xff9fa3a4)),
+      drive  (p.apvts, ParamIDs::drive,  "DRIVE",         Colour (0xffe9643f)),
+      satMix (p.apvts, ParamIDs::satMix, "SAT DRY / WET", Colour (0xff9fa3a4)),
+      output (p.apvts, ParamIDs::output, "OUTPUT",        Colour (0xff1d1f20)),
       strip  (*p.apvts.getParameter (ParamIDs::freq))
 {
     // grain fin de la peinture (poudre mate), comme sur Phosphor XY
@@ -202,7 +202,7 @@ void EditorContent::resized()
     output.setBounds (546, 402, 138, 130);
 
     // Adrien, en bas à droite
-    adrien.setBounds (730, 250, 346, 376);
+    adrien.setBounds (742, 276, 318, 346);
 }
 
 //==============================================================================
@@ -239,14 +239,14 @@ void EditorContent::paint (Graphics& g)
 
     // témoin de fonctionnement
     g.setColour (Theme::accentLit.withAlpha (0.30f));
-    g.fillEllipse (1062.0f, 26.0f, 22.0f, 22.0f);
+    g.fillEllipse (1042.0f, 26.0f, 22.0f, 22.0f);
     g.setColour (Theme::accentLit);
-    g.fillEllipse (1067.0f, 31.0f, 12.0f, 12.0f);
+    g.fillEllipse (1047.0f, 31.0f, 12.0f, 12.0f);
     g.setColour (Colours::black.withAlpha (0.35f));
-    g.drawEllipse (1067.0f, 31.0f, 12.0f, 12.0f, 1.0f);
+    g.drawEllipse (1047.0f, 31.0f, 12.0f, 12.0f, 1.0f);
     g.setColour (Theme::inkSoft);
     g.setFont (uiFont (9.5f, true));
-    g.drawText ("V2  /  VST3", 940, 29, 116, 16, Justification::centredRight);
+    g.drawText ("V2.1  /  VST3", 920, 29, 116, 16, Justification::centredRight);
 
     // sections
     BraunLookAndFeel::drawHeader (g, { 30.0f, 84.0f, 660.0f, 22.0f }, "PULTEC TRICK");
@@ -288,7 +288,7 @@ void EditorContent::paint (Graphics& g)
     drawGrille (g, { 668.0f, 586.0f }, 28.0f);
 
     // la fenêtre d'Adrien : boîtier sombre comme l'écran de Phosphor XY
-    const Rectangle<float> bezel (716.0f, 84.0f, 374.0f, 556.0f);
+    const Rectangle<float> bezel (730.0f, 104.0f, 340.0f, 536.0f);
     g.setColour (Colours::black.withAlpha (0.18f));
     g.fillRoundedRectangle (bezel.translated (0.0f, 5.0f).expanded (1.0f), 20.0f);
     g.setGradientFill (ColourGradient (Colour (0xff35393b), bezel.getX(), bezel.getY(),
@@ -309,7 +309,7 @@ void EditorContent::paint (Graphics& g)
         const Point<float> c (adrien.getBounds().getCentreX() + 50.0f, (float) adrien.getBottom() - 4.0f);
         ColourGradient sh (Colours::black.withAlpha (0.5f), c, Colours::black.withAlpha (0.0f), c.translated (130.0f, 0), true);
         g.setGradientFill (sh);
-        g.fillEllipse (Rectangle<float> (270.0f, 22.0f).withCentre (c));
+        g.fillEllipse (Rectangle<float> (250.0f, 20.0f).withCentre (c));
     }
     g.setColour (Colour (0xff55595c));
     g.drawRoundedRectangle (inset, 14.0f, 2.0f);
@@ -317,38 +317,12 @@ void EditorContent::paint (Graphics& g)
 
 void EditorContent::paintOverChildren (Graphics& g)
 {
-    // faisceau : de la paume d'Adrien jusqu'au cran allumé
-    {
-        const auto from = adrien.getPalmInParent();
-        // on vise le témoin du cran, en arrivant par le dessus de l'afficheur
-        const auto to = strip.getCellCentreInParent (vs.freqIndex).withY ((float) strip.getY() + 14.0f);
-
-        Path beam;
-        beam.startNewSubPath (from);
-        beam.quadraticTo (to.x + (from.x - to.x) * 0.6f, (float) strip.getY() - 60.0f, to.x, to.y);
-
-        const float alpha = 0.35f + 0.4f * jmin (1.0f, levelSmooth * 4.0f);
-        g.setColour (Theme::accentLit.withAlpha (alpha * 0.22f));
-        g.strokePath (beam, PathStrokeType (6.0f, PathStrokeType::curved, PathStrokeType::rounded));
-
-        Path dashed;
-        const float dash[] = { 2.0f, 6.0f };
-        PathStrokeType (1.6f).createDashedStroke (dashed, beam, dash, 2);
-        g.setColour (Theme::crtGreen.withAlpha (jmin (1.0f, alpha + 0.25f)));
-        g.fillPath (dashed);
-
-        g.setColour (Theme::accentLit.withAlpha (0.3f));
-        g.fillEllipse (Rectangle<float> (16.0f, 16.0f).withCentre (from));
-        g.setColour (Theme::crtGreen);
-        g.fillEllipse (Rectangle<float> (5.0f, 5.0f).withCentre (from));
-    }
-
     // bulle d'Adrien, en haut de sa fenêtre
     if (quip.isNotEmpty())
     {
         const float pop = jmin (1.0f, quipAge / 0.18f);
         const auto font = uiFont (13.0f, true);
-        const auto area = Rectangle<float> (736.0f, 100.0f, 334.0f, 120.0f);
+        const auto area = Rectangle<float> (744.0f, 118.0f, 312.0f, 120.0f);
 
         // hauteur selon le nombre de lignes
         GlyphArrangement ga;
@@ -494,7 +468,13 @@ void EditorContent::timerCallback()
     else if (q.isEmpty() && vs.silent)                q = Phrases::silent();
     else if (q.isEmpty())                             q = lastReactionQuip;
 
-    if (q != quip) { quip = q; quipAge = 0.0f; }
+    if (q != quip)
+    {
+        // la bulle ne « repoppe » que si elle était vide : sinon on change juste le texte,
+        // pour qu'elle ne clignote pas quand on tourne un bouton
+        quipAge = quip.isEmpty() ? 0.0f : jmax (quipAge, 0.18f);
+        quip = q;
+    }
     quipAge += dt;
 
     adrien.setPointTarget (strip.getCellCentreInParent (vs.freqIndex));
