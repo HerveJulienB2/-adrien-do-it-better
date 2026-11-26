@@ -4,7 +4,7 @@
 
 Hand-tuned by **Méchant Humain**. Un plugin pour macOS qui fait le Pultec trick dans le grave et sature une bande de fréquences, avec Adrien, ingé son de la rue Doudeauville, qui réagit à chaque réglage.
 
-**Télécharger :** onglet *Releases* (tag v2.x), ou *Actions* → dernier build → artefact `ADRIEN_DO_IT_BETTER_V2_macOS`.
+**Télécharger :** onglet *Releases* (tag v2.x), ou *Actions* → dernier build → artefact `ADRIEN_DO_IT_BETTER_V2.x_macOS` (le numéro de version est dans le nom).
 Le zip contient le VST3, l'AAX (Pro Tools, pas encore signé) et **`INSTALLATION.txt`** avec toutes les commandes Terminal : désinstaller la V1, installer la V2, la débloquer, la vérifier.
 
 ## Nouveautés de la V2

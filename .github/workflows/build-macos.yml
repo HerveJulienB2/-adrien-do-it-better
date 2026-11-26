@@ -33,6 +33,15 @@ jobs:
       - name: Build
         run: cmake --build build --config Release -j 4
 
+      # Nom du zip avec la version du CMakeLists (ex. 2.1.0 -> ADRIEN_DO_IT_BETTER_V2.1_macOS)
+      - name: Version
+        run: |
+          VER=$(sed -n 's/^project(ADRIEN_DO_IT_BETTER_V2 VERSION \([0-9]*\.[0-9]*\).*/\1/p' CMakeLists.txt)
+          echo "Version : $VER"
+          test -n "$VER"
+          echo "VER=$VER" >> "$GITHUB_ENV"
+          echo "PKG_NAME=ADRIEN_DO_IT_BETTER_V${VER}_macOS" >> "$GITHUB_ENV"
+
       - name: Sign (ad-hoc) & package
         run: |
           VST="build/AdrienDoItBetter_artefacts/Release/VST3/ADRIEN DO IT BETTER V2.vst3"
@@ -41,17 +50,17 @@ jobs:
           codesign --force --deep --sign - "$AAX"
           lipo -info "$VST/Contents/MacOS/ADRIEN DO IT BETTER V2"
           cat "$VST/Contents/Resources/moduleinfo.json" | head -12
-          PKG="dist/ADRIEN_DO_IT_BETTER_V2_macOS"
+          PKG="dist/$PKG_NAME"
           mkdir -p "$PKG"
           ditto "$VST" "$PKG/ADRIEN DO IT BETTER V2.vst3"
           ditto "$AAX" "$PKG/ADRIEN DO IT BETTER V2.aaxplugin"
           cp INSTALLATION.txt "$PKG/"
-          (cd dist && ditto -c -k --keepParent ADRIEN_DO_IT_BETTER_V2_macOS ADRIEN_DO_IT_BETTER_V2_macOS.zip)
+          (cd dist && ditto -c -k --keepParent "$PKG_NAME" "$PKG_NAME.zip")
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ADRIEN_DO_IT_BETTER_V2_macOS
-          path: dist/ADRIEN_DO_IT_BETTER_V2_macOS.zip
+          name: ${{ env.PKG_NAME }}
+          path: dist/${{ env.PKG_NAME }}.zip
 
       - name: Publish release (tags, or manual run with a version)
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
@@ -61,10 +70,17 @@ jobs:
         run: |
           TAG="${INPUT_TAG:-$GITHUB_REF_NAME}"
           case "$TAG" in v1.0) echo "La v1.0 ne doit pas être touchée"; exit 1;; esac
+          # la version publiée doit être celle du code (évite de toucher une ancienne release)
+          if [ "$TAG" != "v$VER" ]; then echo "Le tag $TAG ne correspond pas à la version v$VER du CMakeLists"; exit 1; fi
+          ZIP="dist/$PKG_NAME.zip"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/ADRIEN_DO_IT_BETTER_V2_macOS.zip --clobber
+            gh release upload "$TAG" "$ZIP" --clobber
+            # ancien nom sans numéro de version : on le retire de CETTE release seulement
+            if [ "$PKG_NAME" != "ADRIEN_DO_IT_BETTER_V2_macOS" ]; then
+              gh release delete-asset "$TAG" ADRIEN_DO_IT_BETTER_V2_macOS.zip --yes || true
+            fi
           else
-            gh release create "$TAG" dist/ADRIEN_DO_IT_BETTER_V2_macOS.zip --target "$GITHUB_SHA" \
+            gh release create "$TAG" "$ZIP" --target "$GITHUB_SHA" \
               --title "ADRIEN DO IT BETTER ${TAG}" \
               --notes "VST3 macOS universel (Apple Silicon + Intel) + AAX non signé. Suis INSTALLATION.txt dans le zip."
           fi
