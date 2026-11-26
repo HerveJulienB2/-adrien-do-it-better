@@ -19,10 +19,10 @@ sudo rm -rf /Library/Audio/Plug-Ins/VST3/"ADRIEN DO IT BETTER.vst3"
 
 2) Installer la V2 (VST3, pour Ableton)
 ---------------------------------------
-Dézippe ADRIEN_DO_IT_BETTER_V2_macOS.zip (double-clic dans le Finder), puis place-toi
+Dézippe ADRIEN_DO_IT_BETTER_V2.1_macOS.zip (double-clic dans le Finder), puis place-toi
 dans le dossier dézippé. Par exemple, s'il est dans Téléchargements :
 
-cd ~/Downloads/ADRIEN_DO_IT_BETTER_V2_macOS
+cd ~/Downloads/ADRIEN_DO_IT_BETTER_V2.1_macOS
 
 mkdir -p ~/Library/Audio/Plug-Ins/VST3
 cp -R "ADRIEN DO IT BETTER V2.vst3" ~/Library/Audio/Plug-Ins/VST3/
