@@ -21,5 +21,5 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release $EXTRA
 cmake --build build --config Release -j "$(sysctl -n hw.ncpu)"
 
 echo ""
-echo "✔ ADRIEN DO IT BETTER.vst3 est installé dans ~/Library/Audio/Plug-Ins/VST3"
+echo "✔ ADRIEN DO IT BETTER V2.vst3 est installé dans ~/Library/Audio/Plug-Ins/VST3"
 echo "  Relance ton DAW (ou fais un rescan des plugins)."

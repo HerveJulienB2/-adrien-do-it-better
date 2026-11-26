@@ -1,8 +1,10 @@
-name: Build VST3 macOS
+name: Build macOS (VST3 + AAX)
 
+# Compile à chaque envoi, sur toutes les branches : le zip est dans l'onglet Actions (artefact).
+# Une release n'est publiée que pour un tag de version (v2.0, v2.1...) : la release v1.0 n'est plus touchée.
 on:
   push:
-    branches: [ main ]
+    branches: [ '**' ]
     tags: [ 'v*' ]
   workflow_dispatch:
 
@@ -16,34 +18,45 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure (universal arm64 + x86_64)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DADRIEN_PLUGIN_FORMATS="VST3;AAX" \
+            -DADRIEN_COPY_AFTER_BUILD=OFF
 
       - name: Build
         run: cmake --build build --config Release -j 4
 
       - name: Sign (ad-hoc) & package
         run: |
-          VST="$(find build -name 'ADRIEN DO IT BETTER.vst3' -type d -path '*Release*' | head -1)"
-          echo "Bundle: $VST"
+          VST="build/AdrienDoItBetter_artefacts/Release/VST3/ADRIEN DO IT BETTER V2.vst3"
+          AAX="build/AdrienDoItBetter_artefacts/Release/AAX/ADRIEN DO IT BETTER V2.aaxplugin"
           codesign --force --deep --sign - "$VST"
-          lipo -info "$VST/Contents/MacOS/ADRIEN DO IT BETTER"
-          mkdir -p dist
-          ditto -c -k --keepParent "$VST" "dist/ADRIEN_DO_IT_BETTER_VST3_macOS.zip"
+          codesign --force --deep --sign - "$AAX"
+          lipo -info "$VST/Contents/MacOS/ADRIEN DO IT BETTER V2"
+          cat "$VST/Contents/Resources/moduleinfo.json" | head -12
+          PKG="dist/ADRIEN_DO_IT_BETTER_V2_macOS"
+          mkdir -p "$PKG"
+          ditto "$VST" "$PKG/ADRIEN DO IT BETTER V2.vst3"
+          ditto "$AAX" "$PKG/ADRIEN DO IT BETTER V2.aaxplugin"
+          cp INSTALLATION.txt "$PKG/"
+          (cd dist && ditto -c -k --keepParent ADRIEN_DO_IT_BETTER_V2_macOS ADRIEN_DO_IT_BETTER_V2_macOS.zip)
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ADRIEN_DO_IT_BETTER_VST3_macOS
-          path: dist/ADRIEN_DO_IT_BETTER_VST3_macOS.zip
+          name: ADRIEN_DO_IT_BETTER_V2_macOS
+          path: dist/ADRIEN_DO_IT_BETTER_V2_macOS.zip
 
-      - name: Publish release v1.0
-        if: github.ref == 'refs/heads/main'
+      - name: Publish release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v1.0 >/dev/null 2>&1; then
-            gh release upload v1.0 dist/ADRIEN_DO_IT_BETTER_VST3_macOS.zip --clobber
+          TAG="${GITHUB_REF_NAME}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/ADRIEN_DO_IT_BETTER_V2_macOS.zip --clobber
           else
-            gh release create v1.0 dist/ADRIEN_DO_IT_BETTER_VST3_macOS.zip --target "$GITHUB_SHA" \
-              --title "ADRIEN DO IT BETTER v1.0" \
-              --notes "VST3 macOS universel (Apple Silicon + Intel). Dézippe dans ~/Library/Audio/Plug-Ins/VST3."
+            gh release create "$TAG" dist/ADRIEN_DO_IT_BETTER_V2_macOS.zip \
+              --title "ADRIEN DO IT BETTER ${TAG}" \
+              --notes "VST3 macOS universel (Apple Silicon + Intel) + AAX non signé. Suis INSTALLATION.txt dans le zip."
           fi

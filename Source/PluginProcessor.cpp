@@ -4,31 +4,27 @@
 using namespace juce;
 
 //==============================================================================
-static String freqToText (float v, int)
+static String freqLabel (float hz) { return String (roundToInt (hz)) + " Hz"; }
+
+const float* AdrienAudioProcessor::freqSteps()
 {
-    return v < 1000.0f ? String (v, v < 100.0f ? 1 : 0) + " Hz"
-                       : String (v / 1000.0f, v < 10000.0f ? 2 : 1) + " kHz";
+    static const float steps[numFreqSteps] = { 30, 40, 50, 60, 80, 100, 150, 200, 250, 300, 350, 400, 450 };
+    return steps;
 }
 
-static float textToFreq (const String& t)
+float AdrienAudioProcessor::freqForIndex (int index)
 {
-    auto s = t.trim().toLowerCase();
-    float v = s.getFloatValue();
-    if (s.contains ("k")) v *= 1000.0f;
-    return v;
+    return freqSteps()[jlimit (0, numFreqSteps - 1, index)];
 }
 
 AudioProcessorValueTreeState::ParameterLayout AdrienAudioProcessor::createLayout()
 {
     std::vector<std::unique_ptr<RangedAudioParameter>> p;
 
-    NormalisableRange<float> freqRange (20.0f, 16000.0f,
-        [] (float s, float e, float n) { return s * std::pow (e / s, n); },
-        [] (float s, float e, float v) { return std::log (v / s) / std::log (e / s); });
-
-    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::freq, 1 }, "Frequency", freqRange, 60.0f,
-        AudioParameterFloatAttributes().withStringFromValueFunction (freqToText)
-                                       .withValueFromStringFunction (textToFreq)));
+    StringArray freqNames;
+    for (int i = 0; i < numFreqSteps; ++i)
+        freqNames.add (freqLabel (freqSteps()[i]));
+    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::freq, 1 }, "Frequency", freqNames, defaultFreqIndex()));
 
     auto zeroToTen = NormalisableRange<float> (0.0f, 10.0f, 0.01f);
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::boost, 1 }, "Boost", zeroToTen, 0.0f,
@@ -38,8 +34,6 @@ AudioProcessorValueTreeState::ParameterLayout AdrienAudioProcessor::createLayout
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::atten, 1 }, "Atten", zeroToTen, 0.0f,
         AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
             { return "-" + String (adrien::PultecDesign::attenMaxDb * v / 10.0, 1) + " dB"; })));
-
-    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::shape, 1 }, "Shape", StringArray { "LOW", "HIGH" }, 0));
 
     auto pct = AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (roundToInt (v)) + " %"; });
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::eqMix, 1 }, "EQ Mix", NormalisableRange<float> (0.0f, 100.0f, 0.1f), 100.0f, pct));
@@ -55,6 +49,8 @@ AudioProcessorValueTreeState::ParameterLayout AdrienAudioProcessor::createLayout
         AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
             { return (v > 0 ? "+" : "") + String (v, 1) + " dB"; })));
 
+    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::autoGain, 1 }, "Auto Gain", true));
+
     return { p.begin(), p.end() };
 }
 
@@ -67,12 +63,12 @@ AdrienAudioProcessor::AdrienAudioProcessor()
     pFreq    = apvts.getRawParameterValue (ParamIDs::freq);
     pBoost   = apvts.getRawParameterValue (ParamIDs::boost);
     pAtten   = apvts.getRawParameterValue (ParamIDs::atten);
-    pShape   = apvts.getRawParameterValue (ParamIDs::shape);
     pEqMix   = apvts.getRawParameterValue (ParamIDs::eqMix);
     pDrive   = apvts.getRawParameterValue (ParamIDs::drive);
     pSatType = apvts.getRawParameterValue (ParamIDs::satType);
     pSatMix  = apvts.getRawParameterValue (ParamIDs::satMix);
     pOutput  = apvts.getRawParameterValue (ParamIDs::output);
+    pAutoGain = apvts.getRawParameterValue (ParamIDs::autoGain);
 }
 
 bool AdrienAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -94,7 +90,7 @@ void AdrienAudioProcessor::prepareToPlay (double sampleRate, int)
     setLatencySamples (roundToInt (oversampler->getLatencyInSamples()));
 
     const double ramp = 0.05;
-    sFreq.reset (sampleRate, ramp);   sFreq.setCurrentAndTargetValue (pFreq->load());
+    sFreq.reset (sampleRate, ramp);   sFreq.setCurrentAndTargetValue (freqForIndex (roundToInt (pFreq->load())));
     for (auto* s : { &sBoost, &sAtten, &sEqMix, &sDrive, &sSatMix, &sOutput })
         s->reset (sampleRate, ramp);
     sBoost.setCurrentAndTargetValue (pBoost->load());
@@ -109,6 +105,8 @@ void AdrienAudioProcessor::prepareToPlay (double sampleRate, int)
         boostFilt[c].reset(); attenFilt[c].reset();
         svf[c].reset(); sat[c].reset();
     }
+    agPre = agPost = 0.0;
+    agGain = 1.0f;
 }
 
 void AdrienAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&)
@@ -126,7 +124,7 @@ void AdrienAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&
     const double osFactor = (double) oversampler->getOversamplingFactor();
     const double fsOs = fs * osFactor;
 
-    sFreq.setTargetValue (pFreq->load());
+    sFreq.setTargetValue (freqForIndex (roundToInt (pFreq->load())));
     sBoost.setTargetValue (pBoost->load());
     sAtten.setTargetValue (pAtten->load());
     sEqMix.setTargetValue (pEqMix->load() * 0.01f);
@@ -134,7 +132,9 @@ void AdrienAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&
     sSatMix.setTargetValue (pSatMix->load() * 0.01f);
     sOutput.setTargetValue (Decibels::decibelsToGain (pOutput->load()));
 
-    const bool highMode = pShape->load() > 0.5f;
+    const bool autoGainOn = pAutoGain->load() > 0.5f;
+    // AUTO GAIN : constante de temps ~300 ms pour suivre l'énergie sans pomper
+    const double agCoef = std::exp (-(double) chunkSize / (0.3 * fs));
     const int typeIndex = jlimit (0, 4, (int) std::round (pSatType->load()));
     const auto type = (adrien::SatType) typeIndex;
     if (typeIndex != lastSatType)
@@ -144,6 +144,7 @@ void AdrienAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&
     }
 
     double outSq = 0.0, bandSq = 0.0;
+    float peak = 0.0f;
 
     for (int start = 0; start < numSamples; start += chunkSize)
     {
@@ -158,7 +159,7 @@ void AdrienAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&
         const double satMix = sSatMix.skip (n);
 
         adrien::BiquadCoeffs kB, kA;
-        adrien::PultecDesign::design (fs, freq, boost, atten, highMode, kB, kA);
+        adrien::PultecDesign::design (fs, freq, boost, atten, kB, kA);
 
         // --- 1) Pultec trick + EQ dry/wet ---
         for (int c = 0; c < numCh; ++c)
@@ -170,6 +171,15 @@ void AdrienAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&
                 const float y = attenFilt[c].process (boostFilt[c].process (x, kB), kA);
                 d[i] = x + eqMix * (y - x);
             }
+        }
+
+        // énergie avant la saturation (pour l'AUTO GAIN)
+        double preSq = 0.0;
+        for (int c = 0; c < numCh; ++c)
+        {
+            const auto* d = buffer.getReadPointer (c, start);
+            for (int i = 0; i < n; ++i)
+                preSq += (double) d[i] * d[i];
         }
 
         // --- 2) Saturation de la bande autour de la fréquence (suréchantillonnée) ---
@@ -201,15 +211,40 @@ void AdrienAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&
 
         oversampler->processSamplesDown (block);
 
-        // --- 3) Sortie ---
+        // --- 3) AUTO GAIN : on ramène la sortie de la saturation au niveau d'avant ---
+        double postSq = 0.0;
+        for (int c = 0; c < numCh; ++c)
+        {
+            const auto* d = buffer.getReadPointer (c, start);
+            for (int i = 0; i < n; ++i)
+                postSq += (double) d[i] * d[i];
+        }
+        const double k = std::pow (agCoef, (double) n / chunkSize);
+        agPre  = k * agPre  + (1.0 - k) * preSq  / (double) (n * numCh);
+        agPost = k * agPost + (1.0 - k) * postSq / (double) (n * numCh);
+
+        float agTarget = 1.0f;
+        if (autoGainOn)
+        {
+            if (agPre > 1.0e-9 && agPost > 1.0e-12)
+                agTarget = (float) jlimit (0.125, 8.0, std::sqrt (agPre / agPost));   // ±18 dB max
+            else
+                agTarget = agGain;   // silence : on garde la dernière correction
+        }
+        const float agStart = agGain;
+        const float agStep = (agTarget - agStart) * 0.25f;   // glisse vers la cible sur ~4 tranches
+        agGain = agStart + agStep;
+
+        // --- 4) Sortie ---
         for (int i = 0; i < n; ++i)
         {
-            const float g = sOutput.getNextValue();
+            const float g = sOutput.getNextValue() * (agStart + agStep * (float) (i + 1) / (float) n);
             for (int c = 0; c < numCh; ++c)
             {
                 auto* d = buffer.getWritePointer (c, start);
                 d[i] *= g;
                 outSq += (double) d[i] * d[i];
+                peak = jmax (peak, std::abs (d[i]));
             }
         }
     }
@@ -219,6 +254,8 @@ void AdrienAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer&
     const float rmsBand = (float) std::sqrt (bandSq / (numSamples * numCh));
     outputLevel.store (jmax (rmsOut, outputLevel.load() * 0.9f));
     bandLevel.store (jmax (rmsBand, bandLevel.load() * 0.9f));
+    peakLevel.store (jmax (peak, peakLevel.load() * 0.9f));
+    autoGainDb.store (Decibels::gainToDecibels (agGain));
 }
 
 //==============================================================================

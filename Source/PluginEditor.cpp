@@ -1,390 +1,421 @@
 #include "PluginEditor.h"
+#include "Phrases.h"
 
 using namespace juce;
 
-static String U8 (const char* s) { return String (CharPointer_UTF8 (s)); }
+static String U8 (const char* s) { return String::fromUTF8 (s); }
 
 //==============================================================================
-//  LOOK AND FEEL : potards façon Pultec (noir, jupe graduée, pointeur crème)
+//  KNOB
 //==============================================================================
-AdrienLookAndFeel::AdrienLookAndFeel()
+Knob::Knob (AudioProcessorValueTreeState& state, const String& paramId, const String& text, bool metal, int ticks)
 {
-    setColour (Slider::textBoxTextColourId, AdrienColours::cream);
-    setColour (Slider::textBoxOutlineColourId, Colours::transparentBlack);
-    setColour (Slider::textBoxBackgroundColourId, Colours::transparentBlack);
-    setColour (Slider::textBoxHighlightColourId, AdrienColours::amber.withAlpha (0.4f));
-    setColour (Label::textColourId, AdrienColours::cream);
-    setColour (TextEditor::textColourId, AdrienColours::cream);
-    setColour (TextEditor::backgroundColourId, AdrienColours::bgDark);
-    setColour (TextEditor::highlightColourId, AdrienColours::amber.withAlpha (0.4f));
-    setColour (CaretComponent::caretColourId, AdrienColours::amber);
-    setColour (TextEditor::focusedOutlineColourId, AdrienColours::brass);
+    title.setText (text, dontSendNotification);
+    title.setJustificationType (Justification::centred);
+    title.setFont (uiFont (10.5f, true));
+    title.setInterceptsMouseClicks (false, false);
+    addAndMakeVisible (title);
+
+    slider.setSliderStyle (Slider::RotaryHorizontalVerticalDrag);
+    slider.setTextBoxStyle (Slider::TextBoxBelow, false, 76, 16);
+    slider.setRotaryParameters (MathConstants<float>::pi * 1.25f, MathConstants<float>::pi * 2.75f, true);
+    slider.setMouseDragSensitivity (ticks == 10 ? 220 : 160);
+    slider.getProperties().set ("metal", metal);
+    slider.getProperties().set ("ticks", ticks);
+    addAndMakeVisible (slider);
+
+    attachment = std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (state, paramId, slider);
+
+    if (auto* p = state.getParameter (paramId))
+        slider.setDoubleClickReturnValue (true, p->convertFrom0to1 (p->getDefaultValue()));
+
+    slider.onDoubleClick = [this] { if (onDoubleClick) onDoubleClick(); };
 }
 
-void AdrienLookAndFeel::drawRotarySlider (Graphics& g, int x, int y, int w, int h, float pos,
-                                          float startAngle, float endAngle, Slider& s)
+void Knob::resized()
 {
-    const auto bounds = Rectangle<int> (x, y, w, h).toFloat();
-    const auto c = bounds.getCentre();
-    const float R = jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f - 9.0f;
-    const float angle = startAngle + pos * (endAngle - startAngle);
-    const bool big = (bool) s.getProperties()["big"];
-    const bool over = s.isMouseOverOrDragging();
+    auto r = getLocalBounds();
+    title.setBounds (r.removeFromTop (14));
+    slider.setBounds (r);
+}
 
-    // graduations 0..10
-    for (int i = 0; i <= 10; ++i)
+//==============================================================================
+//  CRANS DE FRÉQUENCE
+//==============================================================================
+FreqStrip::FreqStrip (RangedAudioParameter& p)
+    : attachment (p, [this] (float v) { setIndex (roundToInt (v)); }, nullptr)
+{
+    attachment.sendInitialUpdate();
+}
+
+Rectangle<float> FreqStrip::cell (int i) const
+{
+    const auto r = getLocalBounds().toFloat().reduced (10.0f, 8.0f);
+    const float w = r.getWidth() / (float) AdrienAudioProcessor::numFreqSteps;
+    return { r.getX() + w * (float) i, r.getY(), w, r.getHeight() };
+}
+
+Point<float> FreqStrip::getCellCentreInParent (int i) const
+{
+    return cell (i).getCentre() + getPosition().toFloat();
+}
+
+void FreqStrip::paint (Graphics& g)
+{
+    const auto b = getLocalBounds().toFloat();
+    g.setColour (Colour (0xff050605));
+    g.fillRoundedRectangle (b, 6.0f);
+    g.setColour (Colour (0xff4a4d50));
+    g.drawRoundedRectangle (b.reduced (0.75f), 6.0f, 1.5f);
+
+    for (int i = 0; i < AdrienAudioProcessor::numFreqSteps; ++i)
     {
-        const float a = startAngle + (float) i / 10.0f * (endAngle - startAngle);
-        const float r1 = R + 3.0f, r2 = R + ((i % 5 == 0) ? 8.5f : 6.0f);
-        const Point<float> p1 (c.x + r1 * std::sin (a), c.y - r1 * std::cos (a));
-        const Point<float> p2 (c.x + r2 * std::sin (a), c.y - r2 * std::cos (a));
-        g.setColour (AdrienColours::creamDim.withAlpha (i % 5 == 0 ? 0.9f : 0.5f));
-        g.drawLine ({ p1, p2 }, i % 5 == 0 ? 1.6f : 1.0f);
-    }
+        const auto c = cell (i);
+        const bool on = i == index;
+        const auto label = String (roundToInt (AdrienAudioProcessor::freqForIndex (i)));
 
-    // arc de valeur
-    {
-        Path arc;
-        arc.addCentredArc (c.x, c.y, R + 1.5f, R + 1.5f, 0.0f, startAngle, angle, true);
-        g.setColour (AdrienColours::amber.withAlpha (over ? 0.95f : 0.7f));
-        g.strokePath (arc, PathStrokeType (2.2f, PathStrokeType::curved, PathStrokeType::rounded));
-    }
-
-    // jupe
-    ColourGradient skirt (Colour (0xff3a3029), c.x, c.y - R, Colour (0xff0c0907), c.x, c.y + R, false);
-    g.setGradientFill (skirt);
-    g.fillEllipse (Rectangle<float> (R * 2, R * 2).withCentre (c));
-    g.setColour (AdrienColours::brass.withAlpha (0.55f));
-    g.drawEllipse (Rectangle<float> (R * 2, R * 2).withCentre (c), 1.0f);
-
-    // corps du bouton (cannelé)
-    const float rk = R * (big ? 0.78f : 0.74f);
-    {
-        Path flutes;
-        const int n = 24;
-        for (int i = 0; i < n; ++i)
+        if (on)
         {
-            const float a = angle + (float) i / n * MathConstants<float>::twoPi;
-            const float rr = rk * (i % 2 ? 1.0f : 0.95f);
-            const Point<float> p (c.x + rr * std::sin (a), c.y - rr * std::cos (a));
-            if (i == 0) flutes.startNewSubPath (p); else flutes.lineTo (p);
+            g.setColour (Theme::crtGreen.withAlpha (0.16f));
+            g.fillRoundedRectangle (c.reduced (2.0f, 0.0f), 4.0f);
         }
-        flutes.closeSubPath();
-        g.setColour (Colour (0xff050403));
-        g.fillPath (flutes);
-    }
-    ColourGradient cap (Colour (0xff4a423b), c.x - rk * 0.5f, c.y - rk * 0.6f, Colour (0xff0a0807), c.x + rk * 0.4f, c.y + rk * 0.6f, true);
-    g.setGradientFill (cap);
-    g.fillEllipse (Rectangle<float> (rk * 1.7f, rk * 1.7f).withCentre (c));
-    g.setColour (Colours::white.withAlpha (0.07f));
-    g.drawEllipse (Rectangle<float> (rk * 1.7f, rk * 1.7f).withCentre (c), 1.0f);
 
-    // pointeur
-    const Point<float> p1 (c.x + rk * 0.25f * std::sin (angle), c.y - rk * 0.25f * std::cos (angle));
-    const Point<float> p2 (c.x + rk * 0.95f * std::sin (angle), c.y - rk * 0.95f * std::cos (angle));
-    g.setColour (AdrienColours::cream);
-    g.drawLine ({ p1, p2 }, big ? 3.2f : 2.6f);
-    g.setColour (AdrienColours::brass);
-    g.fillEllipse (Rectangle<float> (5.0f, 5.0f).withCentre (c));
+        // témoin
+        const auto led = Rectangle<float> (6.0f, 6.0f).withCentre ({ c.getCentreX(), c.getY() + 6.0f });
+        if (on)
+        {
+            g.setColour (Theme::accentLit.withAlpha (0.35f));
+            g.fillEllipse (led.expanded (3.0f));
+        }
+        g.setColour (on ? Theme::accentLit : Colour (0xff2a3a2f));
+        g.fillEllipse (led);
+
+        g.setColour (on ? Theme::crtGreen : Theme::crtGreen.withAlpha (0.38f));
+        g.setFont (monoFont (on ? 15.0f : 13.0f));
+        g.drawText (label, c.withTrimmedTop (12.0f), Justification::centred);
+    }
+
+    g.setColour (Theme::crtGreen.withAlpha (0.38f));
+    g.setFont (monoFont (10.0f));
+    g.drawText ("Hz", b.reduced (8.0f, 2.0f), Justification::bottomRight);
 }
 
-Label* AdrienLookAndFeel::createSliderTextBox (Slider& s)
+void FreqStrip::mouseDown (const MouseEvent& e)
 {
-    auto* l = LookAndFeel_V4::createSliderTextBox (s);
-    l->setFont (FontOptions (12.5f, Font::bold));
-    l->setJustificationType (Justification::centred);
-    l->setColour (Label::textColourId, AdrienColours::cream);
-    l->setColour (Label::backgroundColourId, Colours::transparentBlack);
-    l->setColour (Label::outlineColourId, Colours::transparentBlack);
-    return l;
-}
-
-void AdrienLookAndFeel::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool over, bool down)
-{
-    auto r = b.getLocalBounds().toFloat().reduced (1.0f);
-    const auto pill = Colour ((uint32) (int64) b.getProperties().getWithDefault ("pill", (int64) 0xffffb347));
-    const float rad = r.getHeight() * 0.5f;
-
-    if (b.getToggleState())
-    {
-        g.setColour (pill.withAlpha (0.25f));
-        g.fillRoundedRectangle (r.expanded (1.5f), rad + 1.5f);
-        g.setColour (pill);
-        g.fillRoundedRectangle (r, rad);
-    }
-    else
-    {
-        g.setColour (Colour (0xff1a1410).brighter (over ? 0.15f : 0.0f).darker (down ? 0.2f : 0.0f));
-        g.fillRoundedRectangle (r, rad);
-        g.setColour (AdrienColours::brass.withAlpha (over ? 0.8f : 0.4f));
-        g.drawRoundedRectangle (r, rad, 1.0f);
-    }
-}
-
-void AdrienLookAndFeel::drawButtonText (Graphics& g, TextButton& b, bool, bool)
-{
-    g.setFont (FontOptions (11.0f, Font::bold));
-    g.setColour (b.getToggleState() ? Colour (0xff15110d) : AdrienColours::creamDim);
-    g.drawText (b.getButtonText(), b.getLocalBounds(), Justification::centred);
+    for (int i = 0; i < AdrienAudioProcessor::numFreqSteps; ++i)
+        if (cell (i).contains (e.position))
+        {
+            attachment.setValueAsCompleteGesture ((float) i);
+            return;
+        }
 }
 
 //==============================================================================
-//  ÉDITEUR
+//  CONTENU DE L'ÉDITEUR
 //==============================================================================
-AdrienAudioProcessorEditor::AdrienAudioProcessorEditor (AdrienAudioProcessor& p)
-    : AudioProcessorEditor (&p), proc (p),
-      screen (*p.apvts.getParameter (ParamIDs::freq))
+EditorContent::EditorContent (AdrienAudioProcessor& p)
+    : proc (p),
+      freq   (p.apvts, ParamIDs::freq,   "FREQUENCY", true, AdrienAudioProcessor::numFreqSteps - 1),
+      boost  (p.apvts, ParamIDs::boost,  "BOOST", true),
+      atten  (p.apvts, ParamIDs::atten,  "ATTEN", true),
+      eqMix  (p.apvts, ParamIDs::eqMix,  "EQ DRY / WET"),
+      drive  (p.apvts, ParamIDs::drive,  "DRIVE", true),
+      satMix (p.apvts, ParamIDs::satMix, "SAT DRY / WET"),
+      output (p.apvts, ParamIDs::output, "OUTPUT"),
+      strip  (*p.apvts.getParameter (ParamIDs::freq))
 {
-    setLookAndFeel (&lnf);
+    // grain fin de la peinture (poudre mate), comme sur Phosphor XY
+    noise = Image (Image::ARGB, W, H, true, SoftwareImageType());
+    {
+        Image::BitmapData bd (noise, Image::BitmapData::writeOnly);
+        Random rnd (1234);
+        for (int y = 0; y < H; ++y)
+            for (int x = 0; x < W; ++x)
+                bd.setPixelColour (x, y, rnd.nextBool() ? Colour::fromRGBA (0, 0, 0, (uint8) rnd.nextInt (9))
+                                                        : Colour::fromRGBA (255, 255, 255, (uint8) rnd.nextInt (11)));
+    }
 
-    addAndMakeVisible (adrien);
-    addAndMakeVisible (screen);
+    for (auto* k : { &freq, &boost, &atten, &eqMix, &drive, &satMix, &output })
+    {
+        addAndMakeVisible (*k);
+        k->onDoubleClick = [this] { resetPending = true; };
+    }
+    addAndMakeVisible (strip);
 
-    setupKnob (freq,   ParamIDs::freq,   "FREQUENCY");
-    setupKnob (boost,  ParamIDs::boost,  "BOOST");
-    setupKnob (atten,  ParamIDs::atten,  "ATTEN");
-    setupKnob (eqMix,  ParamIDs::eqMix,  "EQ DRY / WET");
-    setupKnob (drive,  ParamIDs::drive,  "DRIVE");
-    setupKnob (satMix, ParamIDs::satMix, "SAT DRY / WET");
-    setupKnob (output, ParamIDs::output, "OUTPUT");
-    freq.getProperties().set ("big", true);
-    freq.setDoubleClickReturnValue (true, 60.0);
-    boost.setDoubleClickReturnValue (true, 0.0);
-    atten.setDoubleClickReturnValue (true, 0.0);
-    drive.setDoubleClickReturnValue (true, 0.0);
-    output.setDoubleClickReturnValue (true, 0.0);
-
-    // types de saturation
-    auto names = AdrienAudioProcessor::satTypeNames();
+    // types de saturation : touches à témoin, une seule allumée
     typeAttachment = std::make_unique<ParameterAttachment> (*p.apvts.getParameter (ParamIDs::satType), [] (float) {}, nullptr);
+    const auto names = AdrienAudioProcessor::satTypeNames();
     for (int i = 0; i < 5; ++i)
     {
-        auto& b = typeButtons[i];
-        b.setButtonText (names[i]);
-        b.getProperties().set ("pill", (int64) AdrienColours::forSatType (i).getARGB());
-        b.onClick = [this, i] { typeAttachment->setValueAsCompleteGesture ((float) i); };
-        addAndMakeVisible (b);
+        auto& k = typeKeys[i];
+        k.setButtonText (names[i]);
+        k.setClickingTogglesState (false);
+        k.onClick = [this, i] { typeAttachment->setValueAsCompleteGesture ((float) i); };
+        addAndMakeVisible (k);
     }
 
-    // LOW / HIGH
-    shapeAttachment = std::make_unique<ParameterAttachment> (*p.apvts.getParameter (ParamIDs::shape), [] (float) {}, nullptr);
-    const char* shapeNames[] = { "LOW", "HIGH" };
-    for (int i = 0; i < 2; ++i)
-    {
-        auto& b = shapeButtons[i];
-        b.setButtonText (shapeNames[i]);
-        b.getProperties().set ("pill", (int64) AdrienColours::amber.getARGB());
-        b.onClick = [this, i] { shapeAttachment->setValueAsCompleteGesture ((float) i); };
-        addAndMakeVisible (b);
-    }
+    autoGainKey.setButtonText ("AUTO GAIN");
+    autoGainAttachment = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ParamIDs::autoGain, autoGainKey);
+    addAndMakeVisible (autoGainKey);
 
-    setSize (1060, 660);
+    addAndMakeVisible (adrien);
+
+    setSize (W, H);
     timerCallback();
     startTimerHz (30);
 }
 
-AdrienAudioProcessorEditor::~AdrienAudioProcessorEditor()
+EditorContent::~EditorContent()
 {
     stopTimer();
-    setLookAndFeel (nullptr);
 }
 
-void AdrienAudioProcessorEditor::setupKnob (Slider& s, const char* paramId, const String& name)
+void EditorContent::resized()
 {
-    s.setSliderStyle (Slider::RotaryHorizontalVerticalDrag);
-    s.setTextBoxStyle (Slider::TextBoxBelow, false, 96, 18);
-    s.setRotaryParameters (degreesToRadians (-135.0f), degreesToRadians (135.0f), true);
-    s.setMouseDragSensitivity (220);
-    s.setVelocityBasedMode (false);
-    s.setColour (Slider::textBoxOutlineColourId, Colours::transparentBlack);
-    s.setPopupDisplayEnabled (false, false, this);
-    addAndMakeVisible (s);
-    sliderAttachments.push_back (std::make_unique<SliderAttachment> (proc.apvts, paramId, s));
-    knobNames.push_back ({ &s, name });
-}
-
-//==============================================================================
-void AdrienAudioProcessorEditor::resized()
-{
-    adrien.setBounds (0, 0, 560, 660);
-    screen.setBounds (560, 70, 484, 256);
-
-    // section PULTEC
-    const int x0 = 560, w = 484;
-    const int row1 = 362, row2 = 528, knobH = 96;
-    const int col = w / 4;
-    freq .setBounds (x0 + 0 * col, row1 - 4, col, knobH + 26);
-    boost.setBounds (x0 + 1 * col, row1, col, knobH + 18);
-    atten.setBounds (x0 + 2 * col, row1, col, knobH + 18);
-    eqMix.setBounds (x0 + 3 * col, row1, col, knobH + 18);
-
-    shapeButtons[0].setBounds (x0 + w - 112, 337, 54, 20);
-    shapeButtons[1].setBounds (x0 + w - 56, 337, 54, 20);
-
-    // section SATURATION
-    const int pillW = 58;
-    for (int i = 0; i < 5; ++i)
-        typeButtons[i].setBounds (x0 + w - (5 - i) * (pillW + 2), 503, pillW, 20);
-
-    const int col3 = w / 3;
-    drive .setBounds (x0 + 0 * col3, row2, col3, knobH + 18);
-    satMix.setBounds (x0 + 1 * col3, row2, col3, knobH + 18);
-    output.setBounds (x0 + 2 * col3, row2, col3, knobH + 18);
-}
-
-//==============================================================================
-void AdrienAudioProcessorEditor::paint (Graphics& g)
-{
-    const auto b = getLocalBounds().toFloat();
-
-    // mur du studio
-    ColourGradient wall (AdrienColours::bgMid, 0, 0, AdrienColours::bgDark, 0, b.getHeight(), false);
-    g.setGradientFill (wall);
-    g.fillAll();
-
-    // projecteur sur Adrien
+    // PULTEC TRICK
     {
-        const Point<float> c (230.0f, 300.0f);
-        ColourGradient spot (Colour (0xffffd9a0).withAlpha (0.16f + 0.10f * levelSmooth), c,
-                             Colour (0xffffd9a0).withAlpha (0.0f), c.translated (330.0f, 0), true);
-        g.setGradientFill (spot);
-        g.fillEllipse (Rectangle<float> (660.0f, 660.0f).withCentre (c));
+        auto row = Rectangle<int> (30, 112, 660, 130);
+        const int w = row.getWidth() / 4;
+        for (auto* k : { &freq, &boost, &atten, &eqMix })
+            k->setBounds (row.removeFromLeft (w).reduced (6, 0));
+    }
+    strip.setBounds (30, 256, 660, 50);
+
+    // SATURATION
+    {
+        auto keys = Rectangle<int> (30, 354, 490, 36);
+        const int kw = (keys.getWidth() - 4 * 8) / 5;
+        for (auto& k : typeKeys)
+        {
+            k.setBounds (keys.removeFromLeft (kw));
+            keys.removeFromLeft (8);
+        }
+
+        auto row = Rectangle<int> (30, 402, 490, 130);
+        const int w = row.getWidth() / 3;
+        drive.setBounds (row.removeFromLeft (w).reduced (6, 0));
+        satMix.setBounds (row.removeFromLeft (w).reduced (6, 0));
+        autoGainKey.setBounds (row.withSizeKeepingCentre (110, 40).translated (0, -6));
+    }
+
+    // OUTPUT
+    output.setBounds (546, 402, 138, 130);
+
+    // Adrien, en bas à droite
+    adrien.setBounds (730, 250, 346, 376);
+}
+
+//==============================================================================
+static void drawGrille (Graphics& g, Point<float> centre, float radius)
+{
+    const float pitch = 9.0f;
+    for (float y = -radius; y <= radius; y += pitch)
+        for (float x = -radius; x <= radius; x += pitch)
+            if (x * x + y * y <= radius * radius)
+            {
+                const float px = centre.x + x, py = centre.y + y;
+                g.setColour (Colours::white.withAlpha (0.55f));
+                g.fillEllipse (px - 2.2f, py - 1.2f, 4.4f, 4.4f);
+                g.setColour (Colour (0xff4b5052));
+                g.fillEllipse (px - 2.2f, py - 2.2f, 4.4f, 4.4f);
+            }
+}
+
+void EditorContent::paint (Graphics& g)
+{
+    // face avant gris clair mat
+    g.setGradientFill (ColourGradient (Theme::panelTop, 0.0f, 0.0f, Theme::panelBottom, 0.0f, (float) H, false));
+    g.fillAll();
+    g.drawImageAt (noise, 0, 0);
+
+    // titre : minuscules, sobre
+    g.setColour (Theme::ink);
+    g.setFont (uiFont (27.0f, true));
+    g.drawText ("adrien do it better", 30, 18, 400, 34, Justification::centredLeft);
+    g.setColour (Theme::inkSoft);
+    g.setFont (uiFont (11.0f));
+    g.drawText (U8 ("pultec trick   -   band saturator   -   hand-tuned by M\xc3\xa9" "chant Humain"),
+                32, 48, 520, 14, Justification::centredLeft);
+
+    // témoin de fonctionnement
+    g.setColour (Theme::accentLit.withAlpha (0.30f));
+    g.fillEllipse (1062.0f, 26.0f, 22.0f, 22.0f);
+    g.setColour (Theme::accentLit);
+    g.fillEllipse (1067.0f, 31.0f, 12.0f, 12.0f);
+    g.setColour (Colours::black.withAlpha (0.35f));
+    g.drawEllipse (1067.0f, 31.0f, 12.0f, 12.0f, 1.0f);
+    g.setColour (Theme::inkSoft);
+    g.setFont (uiFont (9.5f, true));
+    g.drawText ("V2  /  VST3", 940, 29, 116, 16, Justification::centredRight);
+
+    // sections
+    BraunLookAndFeel::drawHeader (g, { 30.0f, 84.0f, 660.0f, 22.0f }, "PULTEC TRICK");
+    BraunLookAndFeel::drawHeader (g, { 30.0f, 326.0f, 490.0f, 22.0f }, "SATURATION",
+                                  AdrienColours::forSatType (vs.satType));
+    BraunLookAndFeel::drawHeader (g, { 540.0f, 326.0f, 150.0f, 22.0f }, "OUTPUT");
+
+    // afficheur des réglages
+    {
+        const Rectangle<float> r (30.0f, 556.0f, 600.0f, 60.0f);
+        g.setColour (Colour (0xff050605));
+        g.fillRoundedRectangle (r, 6.0f);
+        g.setColour (Colour (0xff4a4d50));
+        g.drawRoundedRectangle (r.reduced (0.75f), 6.0f, 1.5f);
+
+        auto text = [this] (const char* id) { return proc.apvts.getParameter (id)->getCurrentValueAsText(); };
+        const String l1 = "FREQ " + text (ParamIDs::freq) + "   BOOST " + text (ParamIDs::boost)
+                        + "   ATTEN " + text (ParamIDs::atten) + "   EQ " + text (ParamIDs::eqMix);
+        String l2 = "SAT " + AdrienAudioProcessor::satTypeNames()[vs.satType] + " " + text (ParamIDs::drive)
+                  + "   MIX " + text (ParamIDs::satMix) + "   OUT " + text (ParamIDs::output);
+        if (vs.autoGain)
+        {
+            const float ag = proc.autoGainDb.load();
+            l2 += "   AUTO " + String (ag > 0 ? "+" : "") + String (ag, 1) + " dB";
+        }
+
+        g.setColour (Theme::crtGreen);
+        g.setFont (monoFont (14.0f));
+        g.drawText (l1, r.reduced (12.0f, 8.0f).removeFromTop (20.0f), Justification::centredLeft);
+        g.drawText (l2, r.reduced (12.0f, 8.0f).removeFromBottom (20.0f), Justification::centredLeft);
+        if (vs.clipping)
+        {
+            g.setColour (Colour (0xffff5040));
+            g.drawText ("CLIP", r.reduced (12.0f, 8.0f).removeFromTop (20.0f), Justification::centredRight);
+        }
+    }
+
+    // grille perforée
+    drawGrille (g, { 668.0f, 586.0f }, 28.0f);
+
+    // la fenêtre d'Adrien : boîtier sombre comme l'écran de Phosphor XY
+    const Rectangle<float> bezel (716.0f, 84.0f, 374.0f, 556.0f);
+    g.setColour (Colours::black.withAlpha (0.18f));
+    g.fillRoundedRectangle (bezel.translated (0.0f, 5.0f).expanded (1.0f), 20.0f);
+    g.setGradientFill (ColourGradient (Colour (0xff35393b), bezel.getX(), bezel.getY(),
+                                       Colour (0xff1a1c1d), bezel.getX(), bezel.getBottom(), false));
+    g.fillRoundedRectangle (bezel, 18.0f);
+    g.setColour (Colours::white.withAlpha (0.16f));
+    g.drawRoundedRectangle (bezel.reduced (0.5f), 18.0f, 1.0f);
+
+    const auto inset = bezel.reduced (12.0f);
+    {
+        const auto c = Point<float> (inset.getCentreX() + 20.0f, inset.getBottom() - 170.0f);
+        ColourGradient grad (Colour (0xff4a524c).brighter (0.25f * levelSmooth), c, Colour (0xff101211), inset.getTopLeft(), true);
+        g.setGradientFill (grad);
+        g.fillRoundedRectangle (inset, 14.0f);
     }
     // ombre au sol
     {
-        const Point<float> c (225.0f, 646.0f);
-        ColourGradient sh (Colours::black.withAlpha (0.55f), c, Colours::black.withAlpha (0.0f), c.translated (200.0f, 0), true);
+        const Point<float> c (adrien.getBounds().getCentreX() + 50.0f, (float) adrien.getBottom() - 4.0f);
+        ColourGradient sh (Colours::black.withAlpha (0.5f), c, Colours::black.withAlpha (0.0f), c.translated (130.0f, 0), true);
         g.setGradientFill (sh);
-        g.fillEllipse (Rectangle<float> (420.0f, 34.0f).withCentre (c));
+        g.fillEllipse (Rectangle<float> (270.0f, 22.0f).withCentre (c));
     }
-
-    // titre
-    g.setColour (AdrienColours::cream);
-    g.setFont (FontOptions (36.0f, Font::bold).withHorizontalScale (0.86f));
-    g.drawText ("ADRIEN", 22, 10, 170, 42, Justification::centredLeft);
-    g.setColour (AdrienColours::amber);
-    g.setFont (FontOptions (36.0f, Font::bold | Font::italic).withHorizontalScale (0.86f));
-    g.drawText ("DO IT BETTER", 160, 10, 320, 42, Justification::centredLeft);
-
-    g.setColour (AdrienColours::creamDim);
-    g.setFont (FontOptions (11.0f, Font::bold));
-    g.drawText (U8 ("PULTEC TRICK  \xc2\xb7  BAND SATURATOR"), getWidth() - 330, 14, 310, 16, Justification::centredRight);
-    g.setColour (AdrienColours::brassDim);
-    g.setFont (FontOptions (10.0f));
-    g.drawText ("v1.0  /  hand-tuned by Adrien", getWidth() - 330, 31, 310, 14, Justification::centredRight);
-
-    g.setColour (AdrienColours::brass.withAlpha (0.35f));
-    g.drawHorizontalLine (58, 18.0f, (float) getWidth() - 18.0f);
-
-    // panneau des réglages
-    const auto panel = Rectangle<float> (556.0f, 332.0f, 492.0f, 318.0f);
-    g.setColour (AdrienColours::panel.withAlpha (0.85f));
-    g.fillRoundedRectangle (panel, 10.0f);
-    g.setColour (AdrienColours::brass.withAlpha (0.35f));
-    g.drawRoundedRectangle (panel, 10.0f, 1.0f);
-    g.drawHorizontalLine (496, panel.getX() + 12.0f, panel.getRight() - 12.0f);
-
-    g.setFont (FontOptions (12.0f, Font::bold));
-    g.setColour (AdrienColours::brass);
-    g.drawText ("PULTEC TRICK", 572, 338, 200, 18, Justification::centredLeft);
-    g.drawText ("SATURATION", 572, 504, 200, 18, Justification::centredLeft);
-
-    // noms des potards (au-dessus de chaque potard, côté jupe basse)
-    g.setFont (FontOptions (10.0f, Font::bold));
-    for (auto& [s, name] : knobNames)
-    {
-        g.setColour (AdrienColours::creamDim);
-        auto r = s->getBounds().withY (s->getBottom() - 2).withHeight (14);
-        g.drawText (name, r, Justification::centred);
-    }
+    g.setColour (Colour (0xff55595c));
+    g.drawRoundedRectangle (inset, 14.0f, 2.0f);
 }
 
-void AdrienAudioProcessorEditor::paintOverChildren (Graphics& g)
+void EditorContent::paintOverChildren (Graphics& g)
 {
-    // faisceau : de la paume d'Adrien jusqu'à la fréquence sur l'écran
-    const auto from = adrien.getPalmInParent();
-    const auto to = screen.getMarkerInParent();
-    const auto amber = AdrienColours::amber;
+    // faisceau : de la paume d'Adrien jusqu'au cran allumé
+    {
+        const auto from = adrien.getPalmInParent();
+        // on vise le témoin du cran, en arrivant par le dessus de l'afficheur
+        const auto to = strip.getCellCentreInParent (vs.freqIndex).withY ((float) strip.getY() + 14.0f);
 
-    Path beam;
-    beam.startNewSubPath (from);
-    beam.quadraticTo ((from.x + to.x) * 0.5f, jmin (from.y, to.y) - 30.0f, to.x, to.y);
+        Path beam;
+        beam.startNewSubPath (from);
+        beam.quadraticTo (to.x + (from.x - to.x) * 0.6f, (float) strip.getY() - 60.0f, to.x, to.y);
 
-    const float alpha = 0.35f + 0.4f * levelSmooth;
-    g.setColour (amber.withAlpha (alpha * 0.25f));
-    g.strokePath (beam, PathStrokeType (6.0f, PathStrokeType::curved, PathStrokeType::rounded));
+        const float alpha = 0.35f + 0.4f * jmin (1.0f, levelSmooth * 4.0f);
+        g.setColour (Theme::accentLit.withAlpha (alpha * 0.22f));
+        g.strokePath (beam, PathStrokeType (6.0f, PathStrokeType::curved, PathStrokeType::rounded));
 
-    Path dashed;
-    const float dash[] = { 2.0f, 6.0f };
-    PathStrokeType (1.6f).createDashedStroke (dashed, beam, dash, 2);
-    g.setColour (Colour (0xffffe2b0).withAlpha (alpha + 0.2f));
-    g.fillPath (dashed);
+        Path dashed;
+        const float dash[] = { 2.0f, 6.0f };
+        PathStrokeType (1.6f).createDashedStroke (dashed, beam, dash, 2);
+        g.setColour (Theme::crtGreen.withAlpha (jmin (1.0f, alpha + 0.25f)));
+        g.fillPath (dashed);
 
-    g.setColour (amber.withAlpha (0.25f));
-    g.fillEllipse (Rectangle<float> (18.0f, 18.0f).withCentre (from));
-    g.setColour (Colour (0xffffe2b0).withAlpha (0.8f));
-    g.fillEllipse (Rectangle<float> (5.0f, 5.0f).withCentre (from));
+        g.setColour (Theme::accentLit.withAlpha (0.3f));
+        g.fillEllipse (Rectangle<float> (16.0f, 16.0f).withCentre (from));
+        g.setColour (Theme::crtGreen);
+        g.fillEllipse (Rectangle<float> (5.0f, 5.0f).withCentre (from));
+    }
 
-    // bulle d'Adrien
+    // bulle d'Adrien, en haut de sa fenêtre
     if (quip.isNotEmpty())
     {
         const float pop = jmin (1.0f, quipAge / 0.18f);
-        const float sc = 0.85f + 0.15f * pop;
-        g.setFont (FontOptions (13.0f, Font::bold));
-        const float tw = jmin (250.0f, GlyphArrangement::getStringWidth (g.getCurrentFont(), quip) + 26.0f);
-        auto bubble = Rectangle<float> (285.0f, 84.0f, tw, 34.0f);
-        const auto anchor = Point<float> (bubble.getX(), bubble.getBottom());
+        const auto font = uiFont (13.0f, true);
+        const auto area = Rectangle<float> (736.0f, 100.0f, 334.0f, 120.0f);
+
+        // hauteur selon le nombre de lignes
+        GlyphArrangement ga;
+        ga.addJustifiedText (font, quip, 0.0f, 0.0f, area.getWidth() - 28.0f, Justification::centred);
+        const float textH = ga.getBoundingBox (0, -1, true).getHeight();
+        const float singleW = GlyphArrangement::getStringWidth (font, quip) + 30.0f;
+        const float bw = jmin (area.getWidth(), singleW);
+        const auto head = adrien.getHeadTopInParent();
+        const float bh = jmin (area.getHeight(), textH + 22.0f);
+        const float bottom = jlimit (area.getY() + bh, area.getY() + 150.0f, head.y - 26.0f);
+        auto bubble = Rectangle<float> (bw, bh).withCentre ({ area.getCentreX(), bottom - bh * 0.5f });
+        const auto tailTip = Point<float> (jlimit (bubble.getX() + 20.0f, bubble.getRight() - 20.0f, head.x),
+                                           jmax (bubble.getBottom() + 10.0f, head.y - 12.0f));
 
         Graphics::ScopedSaveState ss (g);
-        g.addTransform (AffineTransform::scale (sc, sc, anchor.x, anchor.y));
-        g.setOpacity (pop);
+        const float sc = 0.85f + 0.15f * pop;
+        g.addTransform (AffineTransform::scale (sc, sc, tailTip.x, tailTip.y));
 
         Path p;
-        p.addRoundedRectangle (bubble, 14.0f);
+        p.addRoundedRectangle (bubble, 12.0f);
         Path tail;
-        tail.startNewSubPath (bubble.getX() + 16.0f, bubble.getBottom() - 6.0f);
-        tail.lineTo (bubble.getX() - 26.0f, bubble.getBottom() + 22.0f);
-        tail.lineTo (bubble.getX() + 34.0f, bubble.getBottom() - 2.0f);
+        const float tx = jlimit (bubble.getX() + 18.0f, bubble.getRight() - 30.0f, tailTip.x - 6.0f);
+        tail.startNewSubPath (tx, bubble.getBottom() - 4.0f);
+        tail.lineTo (tailTip);
+        tail.lineTo (tx + 20.0f, bubble.getBottom() - 4.0f);
         tail.closeSubPath();
         p.addPath (tail);
 
-        g.setColour (Colours::black.withAlpha (0.35f));
+        g.setColour (Colours::black.withAlpha (0.35f * pop));
         g.fillPath (p, AffineTransform::translation (2.0f, 3.0f));
-        g.setColour (AdrienColours::cream);
+        g.setColour (Theme::recess.withAlpha (pop));
         g.fillPath (p);
-        g.setColour (Colour (0xff15110d));
-        g.drawText (quip, bubble.reduced (10.0f, 0.0f), Justification::centred, true);
+        g.setColour (Theme::line.withAlpha (pop));
+        g.strokePath (p, PathStrokeType (1.0f));
+        g.setColour (Theme::ink.withAlpha (pop));
+        g.setFont (font);
+        g.drawFittedText (quip, bubble.reduced (12.0f, 6.0f).toNearestInt(), Justification::centred, 5, 1.0f);
     }
 }
 
 //==============================================================================
-String AdrienAudioProcessorEditor::pickQuip() const
+void EditorContent::trigger (Reaction r)
 {
-    const float heat = vs.heat();
-    if (heat > 0.7f)
+    if (r != vs.reaction || vs.reactionAge > 4.0f)
     {
-        switch (vs.satType)
-        {
-            case 0:  return U8 ("\xc3\x87" "a sature comme en 74.");
-            case 1:  return U8 ("\xc3\x87" "a chauffe, \xc3\xa7" "a chauffe !");
-            case 2:  return U8 ("J'ai les cheveux qui fris" "ent.");
-            case 3:  return U8 ("Je me pixelise l\xc3\xa0...");
-            default: return U8 ("\xc3\x87" "a gr\xc3\xa9sille dans ma t\xc3\xaate.");
-        }
+        reactionSeed = Random::getSystemRandom().nextInt64();
+        vs.reaction = r;
+        vs.reactionAge = 0.0f;
     }
-    if (vs.boost > 6.0f && vs.atten > 6.0f) return U8 ("Le Pultec trick. Classique.");
-    if (vs.boost > 7.5f)                    return U8 ("Regarde-moi cette crini\xc3\xa8re.");
-    if (vs.atten > 7.5f)                    return U8 ("Mes cheveux... MES CHEVEUX !");
-    if (heat > 0.35f)                       return U8 ("Il fait chaud ici, non ?");
-    if (vs.boost > 3.0f && vs.atten < 1.0f) return U8 ("\xc3\x87" "a pousse, \xc3\xa7" "a pousse.");
-    if (vs.level < 0.0005f)                 return U8 ("Envoie du son, je m'ennuie.");
-    return U8 ("Je te montre o\xc3\xb9 \xc3\xa7" "a se passe.");
+    else if (r == Reaction::Freq)
+    {
+        vs.reactionAge = 0.0f;                       // chaque cran refait sauter Adrien
+    }
+    else
+    {
+        vs.reactionAge = jmin (vs.reactionAge, 0.15f);   // on tient la réaction pendant qu'on tourne le bouton
+    }
+    idleFor = 0.0f;
 }
 
-void AdrienAudioProcessorEditor::timerCallback()
+void EditorContent::timerCallback()
 {
+    constexpr float dt = 1.0f / 30.0f;
     auto& ap = proc.apvts;
-    vs.freq     = ap.getRawParameterValue (ParamIDs::freq)->load();
+
+    vs.freqIndex = jlimit (0, AdrienAudioProcessor::numFreqSteps - 1, roundToInt (ap.getRawParameterValue (ParamIDs::freq)->load()));
+    vs.freq     = AdrienAudioProcessor::freqForIndex (vs.freqIndex);
     vs.boost    = ap.getRawParameterValue (ParamIDs::boost)->load();
     vs.atten    = ap.getRawParameterValue (ParamIDs::atten)->load();
     vs.eqMix    = ap.getRawParameterValue (ParamIDs::eqMix)->load() * 0.01f;
@@ -392,28 +423,107 @@ void AdrienAudioProcessorEditor::timerCallback()
     vs.satMix   = ap.getRawParameterValue (ParamIDs::satMix)->load() * 0.01f;
     vs.outputDb = ap.getRawParameterValue (ParamIDs::output)->load();
     vs.satType  = jlimit (0, 4, roundToInt (ap.getRawParameterValue (ParamIDs::satType)->load()));
-    vs.highMode = ap.getRawParameterValue (ParamIDs::shape)->load() > 0.5f;
-    vs.sampleRate = proc.getCurrentSampleRate() > 0 ? proc.getCurrentSampleRate() : 48000.0;
+    vs.autoGain = ap.getRawParameterValue (ParamIDs::autoGain)->load() > 0.5f;
 
+    vs.reactionAge += dt;
+    idleFor += dt;
+
+    // --- chaque réglage touché déclenche une réaction ---
+    if (firstFrame)
+    {
+        firstFrame = false;
+    }
+    else if (resetPending)
+    {
+        resetPending = false;
+        trigger (Reaction::Reset);
+    }
+    else
+    {
+        auto moved = [] (float a, float b, float eps) { return std::abs (a - b) > eps; };
+
+        if (vs.freqIndex != prev.freqIndex)                 trigger (Reaction::Freq);
+        if (vs.satType != prev.satType)                     trigger (Reaction::SatType);
+        if (vs.autoGain != prev.autoGain)                   trigger (vs.autoGain ? Reaction::AutoGainOn : Reaction::AutoGainOff);
+        if (moved (vs.eqMix, prev.eqMix, 0.002f))           trigger (Reaction::EqMix);
+        if (moved (vs.satMix, prev.satMix, 0.002f))         trigger (Reaction::SatMix);
+        if (moved (vs.drive, prev.drive, 0.005f))           trigger (Reaction::Drive);
+        if (moved (vs.outputDb, prev.outputDb, 0.05f))      trigger (vs.outputDb > prev.outputDb ? Reaction::OutputUp : Reaction::OutputDown);
+        if (moved (vs.boost, prev.boost, 0.005f) || moved (vs.atten, prev.atten, 0.005f))
+        {
+            if (vs.boost > 5.0f && vs.atten > 5.0f)         trigger (Reaction::Pultec);
+            else if (moved (vs.boost, prev.boost, 0.005f))  trigger (Reaction::Boost);
+            else                                            trigger (Reaction::Atten);
+        }
+    }
+    prev = vs;
+
+    // --- le son ---
     const float lvl = proc.outputLevel.load();
     const float band = proc.bandLevel.load();
     levelSmooth = lvl > levelSmooth ? lvl : levelSmooth * 0.88f;
     bandSmooth = band > bandSmooth ? band : bandSmooth * 0.88f;
     vs.level = levelSmooth;
     vs.bandLevel = bandSmooth;
-    vs.time += 1.0 / 30.0;
+    vs.time += dt;
 
-    for (int i = 0; i < 5; ++i) typeButtons[i].setToggleState (i == vs.satType, dontSendNotification);
-    for (int i = 0; i < 2; ++i) shapeButtons[i].setToggleState ((i == 1) == vs.highMode, dontSendNotification);
+    if (proc.peakLevel.load() >= 0.999f) clipHold = 1.5f;
+    clipHold = jmax (0.0f, clipHold - dt);
+    vs.clipping = clipHold > 0.0f;
 
-    // l'écran d'abord (position du repère), puis Adrien qui pointe dessus
-    screen.setState (vs);
-    adrien.setPointTarget (screen.getMarkerInParent());
-    adrien.setState (vs);
+    vs.loud = levelSmooth > 0.25f;                       // environ -12 dBFS RMS
+    silentFor = levelSmooth < 0.0005f ? silentFor + dt : 0.0f;
+    vs.silent = silentFor > 2.0f;
+    vs.idle = idleFor > 20.0f;
 
-    const auto q = pickQuip();
+    // --- l'interface suit les paramètres ---
+    for (int i = 0; i < 5; ++i)
+        typeKeys[i].setToggleState (i == vs.satType, dontSendNotification);
+
+    // --- la bulle : CLIP d'abord, puis la réaction en cours, puis l'ambiance ---
+    String q;
+    if (vs.reaction != Reaction::None && vs.reactionAge < 4.0f)
+    {
+        Random r (reactionSeed);
+        q = Phrases::forReaction (vs.reaction, vs, r);
+        lastReactionQuip = q;
+    }
+    if (vs.clipping)                                  q = Phrases::clip();
+    else if (q.isEmpty() && vs.idle)                  q = Phrases::idle ((int) ((idleFor - 20.0f) / 8.0f));
+    else if (q.isEmpty() && vs.loud)                  q = Phrases::loud();
+    else if (q.isEmpty() && vs.silent)                q = Phrases::silent();
+    else if (q.isEmpty())                             q = lastReactionQuip;
+
     if (q != quip) { quip = q; quipAge = 0.0f; }
-    quipAge += 1.0f / 30.0f;
+    quipAge += dt;
 
+    adrien.setPointTarget (strip.getCellCentreInParent (vs.freqIndex));
+    adrien.setState (vs);
     repaint();
+}
+
+//==============================================================================
+//  ÉDITEUR : redimensionnable, proportions fixes (comme Phosphor XY)
+//==============================================================================
+AdrienAudioProcessorEditor::AdrienAudioProcessorEditor (AdrienAudioProcessor& p)
+    : AudioProcessorEditor (&p), content (p)
+{
+    setLookAndFeel (&laf);
+    addAndMakeVisible (content);
+
+    setResizeLimits (EditorContent::W / 2, EditorContent::H / 2, EditorContent::W * 2, EditorContent::H * 2);
+    getConstrainer()->setFixedAspectRatio ((double) EditorContent::W / (double) EditorContent::H);
+    setResizable (true, true);
+    setSize (EditorContent::W, EditorContent::H);
+}
+
+AdrienAudioProcessorEditor::~AdrienAudioProcessorEditor()
+{
+    setLookAndFeel (nullptr);
+}
+
+void AdrienAudioProcessorEditor::resized()
+{
+    content.setBounds (0, 0, EditorContent::W, EditorContent::H);
+    content.setTransform (AffineTransform::scale ((float) getWidth() / (float) EditorContent::W));
 }

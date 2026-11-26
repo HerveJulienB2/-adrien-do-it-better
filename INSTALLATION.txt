@@ -1,0 +1,77 @@
+ADRIEN DO IT BETTER V2 - Méchant Humain
+Installation sur Mac (Ableton Live, et Pro Tools plus tard)
+==========================================================
+
+Toutes les commandes se tapent dans le Terminal (Applications > Utilitaires > Terminal).
+Copie-colle chaque ligne entière, puis Entrée. Ferme Ableton (et Pro Tools) avant de commencer.
+
+
+1) Désinstaller la V1
+---------------------
+La V2 remplace la V1. Supprime l'ancien plugin :
+
+rm -rf ~/Library/Audio/Plug-Ins/VST3/"ADRIEN DO IT BETTER.vst3"
+
+S'il avait été installé pour tous les utilisateurs (le Mac demande ton mot de passe) :
+
+sudo rm -rf /Library/Audio/Plug-Ins/VST3/"ADRIEN DO IT BETTER.vst3"
+
+
+2) Installer la V2 (VST3, pour Ableton)
+---------------------------------------
+Dézippe ADRIEN_DO_IT_BETTER_V2_macOS.zip (double-clic dans le Finder), puis place-toi
+dans le dossier dézippé. Par exemple, s'il est dans Téléchargements :
+
+cd ~/Downloads/ADRIEN_DO_IT_BETTER_V2_macOS
+
+mkdir -p ~/Library/Audio/Plug-Ins/VST3
+cp -R "ADRIEN DO IT BETTER V2.vst3" ~/Library/Audio/Plug-Ins/VST3/
+
+
+3) Débloquer le plugin (macOS bloque ce qui vient d'internet)
+-------------------------------------------------------------
+Retirer la quarantaine :
+
+xattr -cr ~/Library/Audio/Plug-Ins/VST3/"ADRIEN DO IT BETTER V2.vst3"
+
+Re-signer le plugin sur ton Mac (signature locale, gratuite) :
+
+codesign --force --deep --sign - ~/Library/Audio/Plug-Ins/VST3/"ADRIEN DO IT BETTER V2.vst3"
+
+
+4) Vérifier
+-----------
+codesign --verify --verbose ~/Library/Audio/Plug-Ins/VST3/"ADRIEN DO IT BETTER V2.vst3"
+   -> doit afficher « valid on disk »
+
+lipo -info ~/Library/Audio/Plug-Ins/VST3/"ADRIEN DO IT BETTER V2.vst3"/Contents/MacOS/"ADRIEN DO IT BETTER V2"
+   -> doit afficher « x86_64 arm64 » (Mac Intel et Apple Silicon)
+
+
+5) Dans Ableton Live
+--------------------
+Réglages > Plug-ins :
+  - active « Use VST3 Plug-in System Folders » ;
+  - clique sur « Rescan » en maintenant la touche Option (⌥) pour un scan complet.
+Le plugin apparaît dans Plug-ins > VST3 > Méchant Humain > ADRIEN DO IT BETTER V2.
+
+S'il n'apparaît pas, refais l'étape 3, puis relance Ableton.
+
+
+6) Pro Tools (AAX) - pas encore utilisable
+------------------------------------------
+Le zip contient aussi "ADRIEN DO IT BETTER V2.aaxplugin". Pro Tools refuse les plugins AAX
+qui ne sont pas signés par PACE (iLok). Tant que la signature PACE n'est pas en place,
+il ne s'ouvre que dans « Pro Tools Developer » (fourni par Avid aux développeurs).
+
+Pour l'installer quand même (le Mac demande ton mot de passe) :
+
+sudo mkdir -p "/Library/Application Support/Avid/Audio/Plug-Ins"
+sudo cp -R "ADRIEN DO IT BETTER V2.aaxplugin" "/Library/Application Support/Avid/Audio/Plug-Ins/"
+sudo xattr -cr "/Library/Application Support/Avid/Audio/Plug-Ins/ADRIEN DO IT BETTER V2.aaxplugin"
+
+
+7) Désinstaller la V2
+---------------------
+rm -rf ~/Library/Audio/Plug-Ins/VST3/"ADRIEN DO IT BETTER V2.vst3"
+sudo rm -rf "/Library/Application Support/Avid/Audio/Plug-Ins/ADRIEN DO IT BETTER V2.aaxplugin"
