@@ -56,77 +56,73 @@ public:
                            float startAngle, float endAngle, juce::Slider& slider) override
     {
         using juce::Colour;
-        const bool metal = (bool) slider.getProperties()["metal"];
+        // Capuchon façon Pittsburgh Modular : cylindre mat d'une seule couleur, dessus plat,
+        // trait repère fin. La couleur vient de la propriété "cap" du slider.
+        const Colour cap ((juce::uint32) (int) slider.getProperties().getWithDefault ("cap", (int) 0xff1d1f20));
+        const bool dark = cap.getPerceivedBrightness() < 0.35f;
 
         const auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
         const float size = juce::jmin (bounds.getWidth(), bounds.getHeight());
         const auto c = bounds.getCentre();
         const float outerR = size * 0.5f;
 
-        // graduations imprimees (un trait par cran pour un bouton cranté)
+        // graduations imprimées (un point par cran pour un bouton cranté, comme sur la façade Pittsburgh)
         const int ticks = (int) slider.getProperties().getWithDefault ("ticks", 10);
         for (int i = 0; i <= ticks; ++i)
         {
             const float a = startAngle + (float) i / (float) ticks * (endAngle - startAngle);
             const bool major = ticks == 10 ? (i % 5) == 0 : true;
-            g.setColour (Theme::inkSoft.withAlpha (major ? 1.0f : 0.7f));
-            g.drawLine (juce::Line<float> (c.getPointOnCircumference (outerR * (major ? 0.80f : 0.86f), a),
-                                           c.getPointOnCircumference (outerR * 0.97f, a)),
-                        major ? 1.4f : 1.0f);
+            g.setColour (Theme::inkSoft.withAlpha (major ? 1.0f : 0.65f));
+            if (ticks == 10)
+                g.drawLine (juce::Line<float> (c.getPointOnCircumference (outerR * (major ? 0.82f : 0.87f), a),
+                                               c.getPointOnCircumference (outerR * 0.97f, a)),
+                            major ? 1.4f : 1.0f);
+            else
+                g.fillEllipse (juce::Rectangle<float> (3.2f, 3.2f).withCentre (c.getPointOnCircumference (outerR * 0.91f, a)));
         }
 
-        const float R = outerR * 0.70f;
+        const float R = outerR * 0.68f;          // rayon du capuchon
+        const float h = R * 0.16f;               // hauteur visible du cylindre
         const float a = startAngle + sliderPos * (endAngle - startAngle);
+        const auto top = c.translated (0.0f, -h * 0.5f);
 
-        // ombre douce
-        g.setColour (juce::Colours::black.withAlpha (0.14f));
-        g.fillEllipse (c.x - R + 1.5f, c.y - R + 3.5f, R * 2.0f, R * 2.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.10f));
-        g.fillEllipse (c.x - R + 0.5f, c.y - R + 1.5f, R * 2.0f, R * 2.0f);
+        // ombre portée douce
+        g.setColour (juce::Colours::black.withAlpha (0.16f));
+        g.fillEllipse (juce::Rectangle<float> (R * 2.0f + 4.0f, R * 2.0f + 4.0f).withCentre (c.translated (1.0f, h + 2.0f)));
+        g.setColour (juce::Colours::black.withAlpha (0.12f));
+        g.fillEllipse (juce::Rectangle<float> (R * 2.0f, R * 2.0f).withCentre (c.translated (0.0f, h * 0.9f)));
 
-        if (metal)
+        // flanc du cylindre : même couleur, plus sombre, légèrement strié
         {
-            // anneau noir
-            g.setGradientFill (juce::ColourGradient (Colour (0xff3b3e40), c.x - R * 0.6f, c.y - R * 0.8f,
-                                                     Colour (0xff0c0d0e), c.x + R * 0.6f, c.y + R * 0.9f, false));
-            g.fillEllipse (c.x - R, c.y - R, R * 2.0f, R * 2.0f);
-
-            // disque d'aluminium brosse
-            const float D = R * 0.84f;
-            g.setGradientFill (juce::ColourGradient (Colour (0xfff3f4f2), c.x - D * 0.7f, c.y - D * 0.8f,
-                                                     Colour (0xff9ca0a2), c.x + D * 0.8f, c.y + D * 0.9f, false));
-            g.fillEllipse (c.x - D, c.y - D, D * 2.0f, D * 2.0f);
-
-            for (int i = 1; i <= 14; ++i)
+            juce::Path side;
+            side.addEllipse (juce::Rectangle<float> (R * 2.0f, R * 2.0f).withCentre (c.translated (0.0f, h * 0.5f)));
+            g.setGradientFill (juce::ColourGradient (cap.darker (0.55f), c.x - R, c.y,
+                                                     cap.darker (0.85f), c.x + R, c.y, false));
+            g.fillPath (side);
+            g.setColour (juce::Colours::black.withAlpha (0.10f));
+            for (int i = 0; i < 24; ++i)
             {
-                const float rr = D * (float) i / 15.0f;
-                g.setColour ((i % 2 ? juce::Colours::white : juce::Colours::black).withAlpha (0.07f));
-                g.drawEllipse (c.x - rr, c.y - rr, rr * 2.0f, rr * 2.0f, 1.0f);
+                const float ang = juce::MathConstants<float>::twoPi * (float) i / 24.0f;
+                const auto p1 = c.translated (0.0f, h * 0.5f).getPointOnCircumference (R * 0.97f, ang);
+                const auto p2 = c.translated (0.0f, h * 0.5f).getPointOnCircumference (R, ang);
+                g.drawLine (juce::Line<float> (p1, p2), 1.0f);
             }
-            g.setColour (juce::Colours::black.withAlpha (0.35f));
-            g.drawEllipse (c.x - D, c.y - D, D * 2.0f, D * 2.0f, 1.0f);
-
-            g.setColour (Colour (0xff2a2d2f));
-            g.drawLine (juce::Line<float> (c.getPointOnCircumference (D * 0.45f, a),
-                                           c.getPointOnCircumference (D * 0.92f, a)), 2.6f);
         }
-        else
-        {
-            g.setGradientFill (juce::ColourGradient (Colour (0xff4a4d50), c.x - R * 0.5f, c.y - R * 0.7f,
-                                                     Colour (0xff0d0e0f), c.x + R * 0.7f, c.y + R * 0.9f, false));
-            g.fillEllipse (c.x - R, c.y - R, R * 2.0f, R * 2.0f);
 
-            const float D = R * 0.80f;
-            g.setGradientFill (juce::ColourGradient (Colour (0xff2f3133), c.x - D * 0.6f, c.y - D * 0.8f,
-                                                     Colour (0xff0a0b0b), c.x + D * 0.6f, c.y + D, false));
-            g.fillEllipse (c.x - D, c.y - D, D * 2.0f, D * 2.0f);
-            g.setColour (juce::Colours::white.withAlpha (0.10f));
-            g.drawEllipse (c.x - D, c.y - D, D * 2.0f, D * 2.0f, 1.0f);
+        // dessus plat, mat : un dégradé très léger, pas de reflet chromé
+        const float T = R * 0.94f;
+        g.setGradientFill (juce::ColourGradient (cap.brighter (0.10f), top.x - T * 0.6f, top.y - T * 0.8f,
+                                                 cap.darker (0.12f), top.x + T * 0.6f, top.y + T * 0.9f, false));
+        g.fillEllipse (juce::Rectangle<float> (T * 2.0f, T * 2.0f).withCentre (top));
+        g.setColour (juce::Colours::white.withAlpha (dark ? 0.10f : 0.35f));
+        g.drawEllipse (juce::Rectangle<float> (T * 2.0f - 1.0f, T * 2.0f - 1.0f).withCentre (top), 1.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.25f));
+        g.drawEllipse (juce::Rectangle<float> (T * 2.0f, T * 2.0f).withCentre (top), 0.8f);
 
-            g.setColour (Colour (0xfff2f2f0));
-            g.drawLine (juce::Line<float> (c.getPointOnCircumference (D * 0.30f, a),
-                                           c.getPointOnCircumference (R * 0.95f, a)), 2.6f);
-        }
+        // trait repère : du centre jusqu'au bord
+        g.setColour (dark ? Colour (0xfff2f0ea) : Colour (0xff1b1c1d));
+        g.drawLine (juce::Line<float> (top.getPointOnCircumference (T * 0.18f, a),
+                                       top.getPointOnCircumference (T * 0.94f, a)), 2.8f);
     }
 
     // Touche plate avec temoin lumineux : le temoin vert indique l'etat actif.

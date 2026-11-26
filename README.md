@@ -39,7 +39,7 @@ Chaque réglage déclenche une réaction et une phrase dans sa bulle :
 
 | Réglage | Réaction |
 |---|---|
-| FREQUENCY | Il sursaute à chaque cran, son bras pointe le cran allumé |
+| FREQUENCY | Il sursaute à chaque cran |
 | BOOST / ATTEN | Il sourit / il fait la moue. Les deux hauts : pouce levé |
 | EQ DRY / WET | Main à l'oreille, tête penchée |
 | Type de saturation | Sépia, halo, cheveux qui frisent, pixelisation, éclairs |
@@ -65,7 +65,7 @@ Tests hors DAW (Linux ou macOS) : `cmake -S . -B build -DADRIEN_BUILD_TESTS=ON -
 - `Source/Dsp.h` : biquads, SVF, saturations
 - `Source/PluginProcessor.*` : paramètres, traitement audio, AUTO GAIN
 - `Source/PluginEditor.*` : interface (style Phosphor XY), crans, bulle, déclenchement des réactions
-- `Source/BraunLookAndFeel.h` : boutons et touches repris de Phosphor XY
+- `Source/BraunLookAndFeel.h` : façade et touches reprises de Phosphor XY, potards façon Pittsburgh Modular
 - `Source/AdrienView.*` : Adrien et toutes ses réactions
 - `Source/Phrases.h` : les 40 phrases
 - `Tests/Tests.cpp` : tests hors DAW

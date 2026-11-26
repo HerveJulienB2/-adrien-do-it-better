@@ -112,7 +112,7 @@ int main (int argc, char** argv)
         p.prepareToPlay (48000.0, 512);
         std::unique_ptr<AudioProcessorEditor> ed (p.createEditor());
         auto* editor = dynamic_cast<AdrienAudioProcessorEditor*> (ed.get());
-        check (editor != nullptr && editor->getWidth() == 1120 && editor->getHeight() == 660, "éditeur 1120 x 660");
+        check (editor != nullptr && editor->getWidth() == 1100 && editor->getHeight() == 660, "éditeur 1100 x 660");
         check (editor->isResizable(), "fenêtre redimensionnable");
         auto& c = editor->getContent();
         c.tickForTest (3);
@@ -160,6 +160,44 @@ int main (int argc, char** argv)
         // redimensionnement
         editor->setSize (1680, 990);
         check (editor->getWidth() == 1680, "agrandie à 1680 x 990");
+    }
+
+    // balayage d'ATTEN jusqu'à 0, image par image (bulle au-dessus d'Adrien)
+    if (std::getenv ("ADRIEN_SWEEP") != nullptr)
+    {
+        AdrienAudioProcessor p;
+        p.prepareToPlay (48000.0, 512);
+        std::unique_ptr<AudioProcessorEditor> ed (p.createEditor());
+        auto& c = dynamic_cast<AdrienAudioProcessorEditor*> (ed.get())->getContent();
+        c.tickForTest (3);
+        int frame = 0;
+        for (float boostV : { 0.0f, 8.0f })
+        {
+            setParam (p, ParamIDs::boost, boostV);
+            c.tickForTest (5);
+            for (float a = 7.0f; a >= -0.01f; a -= 0.5f)
+            {
+                setParam (p, ParamIDs::atten, jmax (0.0f, a));
+                c.tickForTest (1);
+                auto img = c.createComponentSnapshot ({ 730, 104, 340, 300 }, true, 1.0f);
+                auto f = shots.getChildFile ("sweep_" + String (frame++).paddedLeft ('0', 3) + ".png");
+                f.deleteFile();
+                FileOutputStream out (f);
+                PNGImageFormat().writeImageToStream (img, out);
+                std::cout << "  boost " << boostV << " atten " << jmax (0.0f, a) << " : " << c.getQuip() << std::endl;
+            }
+            c.tickForTest (40);
+        }
+        for (int k = 0; k < 4; ++k)
+        {
+            c.tickForTest (60);
+            auto img = c.createComponentSnapshot ({ 730, 104, 340, 300 }, true, 1.0f);
+            auto f = shots.getChildFile ("late_" + String (k) + ".png");
+            f.deleteFile();
+            FileOutputStream out (f);
+            PNGImageFormat().writeImageToStream (img, out);
+            std::cout << "  late " << k << " : " << c.getQuip() << std::endl;
+        }
     }
 
     std::cout << "Phrases : " << Phrases::count() << std::endl;

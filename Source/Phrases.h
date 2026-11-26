@@ -41,11 +41,13 @@ namespace Phrases
 
             case Reaction::Boost:
                 if (s.boost >= 9.95f) return u8 ("Boost à 10 ? T'as cru que c'était le Hellfest ?");
+                if (s.boost < 0.05f)  return u8 ("Boost à zéro : le grave reste comme il est. Sage.");
                 return pick (rnd, { "Ça gonfle comme un welsh qui gratine.",
                                     "Du grave, biloute ! Le kick va enfin exister." });
 
             case Reaction::Atten:
                 if (s.atten >= 9.95f) return u8 ("Atten à fond… tu veux me rendre chauve ou quoi ?");
+                if (s.atten < 0.05f)  return u8 ("Atten à zéro : je creuse plus rien, on garde tout.");
                 return pick (rnd, { "Je creuse juste au-dessus. Le Pultec trick, à l'ancienne.",
                                     "On enlève la boue. Comme sur mes rangers après le Hellfest." });
 
@@ -115,5 +117,5 @@ namespace Phrases
     }
 
     // toutes les phrases (pour les tests)
-    inline int count() { return 40; }
+    inline int count() { return 42; }
 }

@@ -5,13 +5,13 @@
 #include "BraunLookAndFeel.h"
 
 //==============================================================================
-// Bouton rotatif (style Phosphor XY) avec son titre et sa valeur.
+// Bouton rotatif façon Pittsburgh Modular (capuchon mat coloré) avec son titre et sa valeur.
 // Le double-clic remet la valeur par défaut et fait cligner Adrien de l'œil.
 class Knob : public juce::Component
 {
 public:
     Knob (juce::AudioProcessorValueTreeState& state, const juce::String& paramId, const juce::String& text,
-          bool metal = false, int ticks = 10);
+          juce::Colour cap = juce::Colour (0xff1d1f20), int ticks = 10);
 
     void resized() override;
 
@@ -34,7 +34,7 @@ private:
 };
 
 //==============================================================================
-// Les 13 crans de fréquence, lisibles d'un coup d'œil. Adrien pointe le cran allumé.
+// Les 13 crans de fréquence, lisibles d'un coup d'œil.
 // Un clic sur un cran le sélectionne.
 class FreqStrip : public juce::Component
 {
@@ -60,7 +60,7 @@ class EditorContent : public juce::Component,
                       private juce::Timer
 {
 public:
-    static constexpr int W = 1120, H = 660;
+    static constexpr int W = 1100, H = 660;
 
     explicit EditorContent (AdrienAudioProcessor&);
     ~EditorContent() override;
